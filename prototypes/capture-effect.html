@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Снятие камней — прототип WebGL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&text=%E7%81%AB%E5%86%B0&display=block" rel="stylesheet">
+<style>
+  :root { --bg: #141618; --surface: #1f2225; --line: #3a3f45; --text: #eceae5; --muted: #a9acaf; --accent: #f0883e; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Manrope', system-ui, sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 24px 16px; display: flex; flex-direction: column; gap: 16px; }
+  h1 { margin: 0; font-size: 22px; }
+  p { margin: 0; color: var(--muted); line-height: 1.5; }
+  .stage { position: relative; width: 100%; aspect-ratio: 960 / 880; border-radius: 14px; overflow: hidden;
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(255, 236, 190, .35), transparent 60%),
+      repeating-linear-gradient(93deg, rgba(110, 62, 18, .07) 0 2px, transparent 2px 9px),
+      repeating-linear-gradient(87deg, rgba(255, 238, 200, .07) 0 1px, transparent 1px 15px),
+      linear-gradient(160deg, #e4b872, #cf9a52);
+    box-shadow: 0 24px 50px rgba(0, 0, 0, .5); }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .tag { position: absolute; font-size: 14px; font-weight: 700; color: #3a2812; background: rgba(255, 240, 210, .55); padding: 4px 10px; border-radius: 999px; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  button, select { font: inherit; font-weight: 700; font-size: 15px; min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line); background: #282c30; color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #1b1006; }
+  input[type=range] { flex: 1 1 240px; accent-color: var(--accent); }
+  .phase { min-width: 220px; font-weight: 700; }
+  label { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Снятие камней — прототип на WebGL</h1>
+  <p>Чёрный камень превращается в сухую землю, трескается и рассыпается. Белый превращается в лёд, трескается и разлетается осколками. Сверху — один камень крупно. Снизу — снятие группы почти в реальном размере: ход занимает последнее дыхание, первым распадается камень рядом с этим ходом, дальше по цепочке соседей с заданным шагом.</p>
+  <div class="stage" id="stage">
+    <canvas id="bg"></canvas>
+    <canvas id="gl"></canvas>
+    <canvas id="ov"></canvas>
+    <span class="tag" style="left: 2%; top: 2%">Чёрные: сухая земля</span>
+    <span class="tag" style="right: 2%; top: 2%">Белые: лёд</span>
+    <span class="tag" style="left: 2%; top: 51%">Ход чёрных снимает группу белых</span>
+    <span class="tag" style="right: 2%; top: 51%">Ход белых снимает группу чёрных</span>
+  </div>
+  <div class="controls">
+    <button type="button" class="primary" id="play">Пауза</button>
+    <button type="button" id="restart">Сначала</button>
+    <button type="button" id="shuffle">Другие варианты</button>
+    <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Момент анимации">
+    <span class="phase" id="phase"></span>
+    <label>Скорость
+      <select id="speed">
+        <option value="0.25">×0,25</option>
+        <option value="0.5">×0,5</option>
+        <option value="1" selected>×1</option>
+      </select>
+    </label>
+    <label>Шаг цепочки
+      <select id="step">
+        <option value="0.12">120 мс</option>
+        <option value="0.2">200 мс</option>
+        <option value="0.3" selected>300 мс</option>
+      </select>
+    </label>
+    <span id="variants" style="color: var(--muted)"></span>
+    <label><input type="checkbox" id="showLayers"> Номера слоёв (только для обсуждения)</label>
+  </div>
+</main>
+<script>
+(async function () {
+  const W = 960, H = 880, DURATION = 1.4;
+  const CELL = 36, SR = 17, GRID_N = 9, GRID_Y = 500, GRID_X = [96, 576];
+  const MOVE_T = 0.3, DROP = 0.18, CAP_T = 0.5;
+  const bg = document.getElementById('bg');
+  const canvas = document.getElementById('gl');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  [bg, canvas].forEach((c) => { c.width = W * dpr; c.height = H * dpr; });
+
+  // Board grids under the group scenes
+  const ctx = bg.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.strokeStyle = 'rgba(58, 40, 18, .82)';
+  ctx.lineWidth = 1;
+  GRID_X.forEach((ox) => {
+    for (let i = 0; i < GRID_N; i++) {
+      ctx.beginPath(); ctx.moveTo(ox + i * CELL + .5, GRID_Y); ctx.lineTo(ox + i * CELL + .5, GRID_Y + (GRID_N - 1) * CELL); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ox, GRID_Y + i * CELL + .5); ctx.lineTo(ox + (GRID_N - 1) * CELL, GRID_Y + i * CELL + .5); ctx.stroke();
+    }
+  });
+
+  // Glyph atlas: 火 left, 冰 right
+  try { await document.fonts.load('180px "Yuji Syuku"', '火冰'); } catch (e) { /* fallback font */ }
+  const atlas = document.createElement('canvas');
+  atlas.width = 512; atlas.height = 256;
+  const a = atlas.getContext('2d');
+  a.fillStyle = '#fff';
+  a.textAlign = 'center';
+  a.textBaseline = 'middle';
+  a.font = '180px "Yuji Syuku", serif';
+  a.fillText('火', 128, 136);
+  a.fillText('冰', 384, 136);
+
+  const gl = canvas.getContext('webgl2', { premultipliedAlpha: true, antialias: true, alpha: true });
+  if (!gl) { document.getElementById('phase').textContent = 'WebGL2 недоступен'; return; }
+
+  const NOISE = `
+    float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+    vec2 hash2(vec2 p) { return vec2(hash(p), hash(p + 17.17)); }
+    float vnoise(vec2 p) {
+      vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+    }
+    float fbm(vec2 p) { float s = 0.0, k = 0.5; for (int i = 0; i < 5; i++) { s += k * vnoise(p); p *= 2.03; k *= 0.5; } return s; }
+    float vorEdge(vec2 p) {
+      vec2 i = floor(p), f = fract(p); float d1 = 8.0, d2 = 8.0;
+      for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+        vec2 g = vec2(x, y); vec2 r = g + hash2(i + g) - f; float d = dot(r, r);
+        if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) { d2 = d; }
+      }
+      return sqrt(d2) - sqrt(d1);
+    }`;
+
+  // Where the material change (fire or frost) has reached: 0 = first, 1 = last.
+  // 0: from one side, 1: from the rim inward, 2: from the centre outward, 3: from several ignition spots
+  const BURN = `
+    uniform int uBurnMode; uniform vec2 uIgnite[3]; uniform vec2 uWaveDir;
+    float frontField(vec2 p) {
+      float n = fbm(p * 2.5 + uSeed);
+      float base;
+      if (uBurnMode == 1) base = 1.0 - length(p);
+      else if (uBurnMode == 2) base = length(p);
+      else if (uBurnMode == 3) base = clamp(min(min(distance(p, uIgnite[0]), distance(p, uIgnite[1])), distance(p, uIgnite[2])) / 1.25, 0.0, 1.0);
+      else base = (dot(p, uWaveDir) + 1.0) * 0.5;
+      return base * 0.8 + n * 0.2;
+    }`;
+
+  const shardVS = `#version 300 es
+    in vec2 aPos;
+    uniform vec2 uCenter; uniform float uR; uniform vec2 uOffset; uniform float uRot; uniform vec2 uPivot; uniform float uScale; uniform vec2 uRes;
+    out vec2 vLocal;
+    void main() {
+      vLocal = aPos;
+      vec2 p = aPos - uPivot;
+      float c = cos(uRot), s = sin(uRot);
+      p = mat2(c, s, -s, c) * p * uScale + uPivot;
+      vec2 px = uCenter + p * uR + uOffset;
+      vec2 clip = px / uRes * 2.0 - 1.0; clip.y = -clip.y;
+      gl_Position = vec4(clip, 0.0, 1.0);
+    }`;
+
+  const shardFS = `#version 300 es
+    precision highp float;
+    in vec2 vLocal; out vec4 outColor;
+    uniform int uColor; uniform int uCell; uniform vec2 uCells[12]; uniform int uNCells;
+    uniform float uMat; uniform float uCrack; uniform vec2 uImpact; uniform float uErode; uniform float uAlpha;
+    uniform float uShadow; uniform float uFlash; uniform float uSeed; uniform float uR; uniform float uTime;
+    uniform sampler2D uGlyph; uniform vec4 uGlyphRect; uniform float uGlyphRot;
+    ${NOISE}
+    ${BURN}
+    float glyphAt(vec2 p) {
+      float c = cos(uGlyphRot), s = sin(uGlyphRot);
+      vec2 q = mat2(c, -s, s, c) * p;
+      vec2 uv = q / 1.5 + 0.5;
+      if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0;
+      return texture(uGlyph, uGlyphRect.xy + uv * uGlyphRect.zw).a;
+    }
+    void main() {
+      vec2 p = vLocal;
+      float r = length(p);
+      if (r > 1.0) discard;
+      float d1 = 1e9, d2 = 1e9; int id = -1;
+      for (int i = 0; i < 12; i++) {
+        if (i >= uNCells) break;
+        float d = distance(p, uCells[i]);
+        if (d < d1) { d2 = d1; d1 = d; id = i; } else if (d < d2) { d2 = d; }
+      }
+      if (id != uCell) discard;
+      float edge = d2 - d1;
+      if (uErode > 0.0) {
+        float v = fbm(p * 6.0 + uSeed) * 0.75 + clamp(edge * 4.0, 0.0, 1.0) * 0.35;
+        if (v < uErode * 1.1) discard;
+      }
+      float aa = 1.0 - smoothstep(1.0 - 1.5 / uR, 1.0, r);
+      if (uShadow > 0.5) { outColor = vec4(0.0, 0.0, 0.0, 0.34 * uAlpha * aa); return; }
+
+      float z = sqrt(max(0.0, 1.0 - r * r));
+      vec3 N = normalize(vec3(p * 0.55, z));
+      vec3 L = normalize(vec3(-0.5, -0.6, 0.8));
+      float diff = max(dot(N, L), 0.0);
+      vec3 Rf = reflect(-L, N);
+      float spec = pow(max(Rf.z, 0.0), 28.0);
+      float ga = glyphAt(p);
+
+      vec3 stone;
+      if (uColor == 0) {
+        stone = vec3(0.045) + vec3(0.11) * diff + vec3(0.55) * spec;
+        stone = mix(stone, vec3(0.83, 0.81, 0.77) * (0.75 + 0.25 * diff), ga * 0.92);
+      } else {
+        stone = vec3(0.95, 0.94, 0.91) * (0.62 + 0.42 * diff) + vec3(0.32) * spec;
+        stone *= 1.0 - 0.012 * sin((p.x * 0.8 + p.y * 0.5) * 30.0 + vnoise(p * 4.0) * 2.0);
+        stone = mix(stone, vec3(0.23, 0.21, 0.19), ga * 0.9);
+      }
+
+      float n1 = fbm(p * 3.0 + uSeed);
+      float n2 = fbm(p * 9.0 + uSeed * 2.0);
+      vec3 mat;
+      if (uColor == 0) {
+        mat = mix(vec3(0.33, 0.22, 0.13), vec3(0.60, 0.44, 0.28), n1);
+        mat *= 0.82 + 0.36 * n2;
+        float cq = vorEdge(p * 4.2 + uSeed * 3.0);
+        float cqw = fwidth(cq) * 1.5;
+        mat *= mix(0.55, 1.0, smoothstep(0.0, 0.07 + cqw, cq));
+        mat *= 0.62 + 0.5 * diff;
+        mat = mix(mat, mat * 0.45, ga * 0.6);
+      } else {
+        mat = mix(vec3(0.52, 0.76, 0.91), vec3(0.88, 0.96, 1.0), n1);
+        mat += 0.07 * sin(dot(p, vec2(9.0, 5.0)) + n2 * 7.0);
+        float ga2 = glyphAt(p + (vec2(vnoise(p * 8.0), vnoise(p * 8.0 + 3.1)) - 0.5) * 0.06);
+        mat = mix(mat, vec3(0.20, 0.42, 0.62), ga2 * 0.45);
+        mat = mix(mat, vec3(1.0), pow(r, 3.0) * 0.55);
+        mat *= 0.75 + 0.35 * diff;
+        mat += vec3(0.9) * pow(max(Rf.z, 0.0), 60.0);
+      }
+
+      float f = frontField(p);
+      vec3 col;
+      if (uColor == 0) {
+        // Burning: a wide ragged fire front eats the stone, behind it the char smoulders
+        // with glowing veins and embers, then slowly cools into dry earth.
+        float fl = fbm(p * 4.0 + vec2(0.0, uTime * 2.5) + uSeed);
+        float since = uMat - (f + (fl - 0.5) * 0.16);
+        float burning = step(0.001, uMat);
+        vec3 charC = vec3(0.065, 0.04, 0.028);
+        vec3 burnt = mix(charC, mat, smoothstep(0.2, 0.75, since));
+        // scorched, bubbling surface just ahead of the fire
+        float scorch = exp(-max(-since, 0.0) * 9.0) * step(since, 0.0) * burning;
+        vec3 ahead = mix(stone, vec3(0.16, 0.06, 0.02), scorch * 0.6);
+        col = since > 0.0 ? burnt : ahead;
+        float fresh = step(0.0, since) * (1.0 - smoothstep(0.05, 0.6, since));
+        float veinField = vorEdge(p * 5.5 + uSeed * 1.7);
+        float vein = 1.0 - smoothstep(0.0, 0.06 + fwidth(veinField) * 1.5, veinField);
+        col += vec3(1.0, 0.36, 0.05) * vein * fresh * (0.55 + 0.6 * fl);
+        float embers = smoothstep(0.62, 0.85, vnoise(p * 12.0 + vec2(0.0, uTime * 0.8) + uSeed)) * fresh;
+        col += vec3(1.0, 0.55, 0.15) * embers * (0.5 + 0.5 * fl);
+        float heat = smoothstep(-0.07, 0.0, since) * (1.0 - smoothstep(0.03, 0.24, since)) * burning;
+        vec3 fire = mix(vec3(0.55, 0.06, 0.0), vec3(1.0, 0.45, 0.06), smoothstep(0.1, 0.55, heat * (0.5 + fl)));
+        fire = mix(fire, vec3(0.92, 0.55, 0.2), smoothstep(0.7, 1.0, heat * (0.5 + fl)));
+        col = mix(col, fire, heat * 0.8) + fire * heat * 0.12;
+      } else {
+        // Freezing: a soft wide band of fog rolls over the stone; behind it fresh white rime
+        // with frost feathers settles and slowly clears into ice.
+        float fl = fbm(p * 3.0 + vec2(uTime * 0.6, uTime * 0.9) + uSeed);
+        float since = uMat - (f + (fl - 0.5) * 0.2);
+        float chillOn = step(0.001, uMat);
+        float chill = exp(-max(-since, 0.0) * 7.0) * step(since, 0.0) * chillOn;
+        vec3 ahead = mix(stone, stone * vec3(0.86, 0.94, 1.04), chill * 0.7);
+        vec3 rime = vec3(0.93, 0.97, 1.0) * (0.84 + 0.2 * diff);
+        vec3 frozen = mix(rime, mat, smoothstep(0.08, 0.5, since));
+        col = since > 0.0 ? frozen : ahead;
+        float featherField = vorEdge(p * 7.0 + uSeed * 2.3);
+        float feather = 1.0 - smoothstep(0.0, 0.05 + fwidth(featherField) * 1.5, featherField);
+        col = mix(col, vec3(0.78, 0.9, 1.0), feather * step(0.0, since) * (1.0 - smoothstep(0.05, 0.45, since)) * 0.45);
+        float band = smoothstep(-0.1, 0.0, since) * (1.0 - smoothstep(0.02, 0.28, since)) * chillOn;
+        col = mix(col, vec3(0.9, 0.95, 1.0), band * (0.5 + 0.3 * fl));
+      }
+
+      float cw = (uColor == 0 ? 0.040 : 0.022) * (0.6 + 0.8 * vnoise(p * 14.0 + uSeed));
+      float reveal = uCrack > 0.0 ? 1.0 - smoothstep(uCrack - 0.12, uCrack, distance(p, uImpact)) : 0.0;
+      float ew = fwidth(edge);
+      float crack = (1.0 - smoothstep(cw * 0.5, cw + ew, edge)) * reveal;
+      if (uColor == 0) {
+        col = mix(col, vec3(0.08, 0.045, 0.02), crack);
+      } else {
+        col = mix(col, vec3(1.0), crack * 0.9);
+        col += vec3(0.55, 0.82, 1.0) * exp(-edge * 28.0) * reveal * 0.3;
+      }
+      col += vec3(uFlash);
+      float alpha = uAlpha * aa;
+      outColor = vec4(col * alpha, alpha);
+    }`;
+
+  const partVS = `#version 300 es
+    in vec2 aPos; in float aSize; in vec4 aCol;
+    uniform vec2 uRes; uniform float uDpr;
+    out vec4 vCol;
+    void main() {
+      vec2 clip = aPos / uRes * 2.0 - 1.0; clip.y = -clip.y;
+      gl_Position = vec4(clip, 0.0, 1.0);
+      gl_PointSize = aSize * uDpr;
+      vCol = aCol;
+    }`;
+  const partFS = `#version 300 es
+    precision highp float;
+    in vec4 vCol; out vec4 outColor; uniform int uKind;
+    void main() {
+      vec2 q = gl_PointCoord - 0.5;
+      float a;
+      if (uKind == 0) {
+        a = smoothstep(0.5, 0.15, length(q));
+      } else if (uKind == 2) {
+        float d2 = dot(q, q);
+        a = exp(-d2 * 11.0) * smoothstep(0.5, 0.3, length(q));
+      } else {
+        vec2 d = abs(q);
+        a = max(smoothstep(0.10, 0.0, d.x) * smoothstep(0.5, 0.0, d.y), smoothstep(0.10, 0.0, d.y) * smoothstep(0.5, 0.0, d.x));
+        a = max(a, smoothstep(0.22, 0.0, length(q)));
+      }
+      outColor = vCol * a;
+    }`;
+
+  function compile(type, src) {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  function program(vs, fs) {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    const u = {};
+    const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(p, i); const name = info.name.replace('[0]', ''); u[name] = gl.getUniformLocation(p, info.name); }
+    return { p, u };
+  }
+
+  // Flames licking up from the burning front, drawn additively over the stone on a larger quad
+  const fireFS = `#version 300 es
+    precision highp float;
+    in vec2 vLocal; out vec4 outColor;
+    uniform float uMat; uniform float uTime; uniform float uSeed; uniform float uFade;
+    ${NOISE}
+    ${BURN}
+    float band(vec2 p) {
+      if (length(p) > 1.0) return 0.0;
+      float fl = fbm(p * 4.0 + vec2(0.0, uTime * 2.5) + uSeed);
+      float since = uMat - (frontField(p) + (fl - 0.5) * 0.16);
+      return smoothstep(-0.06, 0.0, since) * (1.0 - smoothstep(0.03, 0.24, since));
+    }
+    void main() {
+      vec2 q = vLocal * 1.7;
+      float I = 0.0;
+      for (int k = 0; k < 8; k++) {
+        float h = float(k) * 0.075;
+        float sway = (fbm(q * 2.5 + vec2(0.0, uTime * 4.0) + uSeed) - 0.5) * h * 0.9;
+        I = max(I, band(q + vec2(sway, h)) * (1.0 - float(k) / 8.0));
+      }
+      float tongues = fbm(vec2(q.x * 5.0, q.y * 2.2 + uTime * 7.0) + uSeed * 3.0);
+      I *= mix(0.35, 1.35, tongues);
+      I = min(clamp(I, 0.0, 1.0), 0.82) * uFade;
+      vec3 c = mix(vec3(0.45, 0.04, 0.0), vec3(1.0, 0.42, 0.05), smoothstep(0.08, 0.45, I));
+      c = mix(c, vec3(0.92, 0.56, 0.22), smoothstep(0.7, 0.95, I));
+      float a = smoothstep(0.04, 0.35, I);
+      outColor = vec4(c * a * 0.62, 0.0);
+    }`;
+
+  // Fog: soft wisps that roll off the freezing front and spread past the stone (normal blending)
+  const fogFS = `#version 300 es
+    precision highp float;
+    in vec2 vLocal; out vec4 outColor;
+    uniform float uMat; uniform float uTime; uniform float uSeed; uniform float uFade;
+    ${NOISE}
+    ${BURN}
+    float band(vec2 p) {
+      if (length(p) > 1.0) return 0.0;
+      float fl = fbm(p * 3.0 + vec2(uTime * 0.6, uTime * 0.9) + uSeed);
+      float since = uMat - (frontField(p) + (fl - 0.5) * 0.2);
+      return smoothstep(-0.1, 0.0, since) * (1.0 - smoothstep(0.02, 0.3, since));
+    }
+    void main() {
+      vec2 q = vLocal * 1.7;
+      vec2 out_ = normalize(q + vec2(1e-4));
+      float I = 0.0;
+      for (int k = 0; k < 8; k++) {
+        float h = float(k) * 0.07;
+        vec2 drift = vec2(fbm(q * 1.8 + vec2(uTime * 0.5, 0.0) + uSeed) - 0.5,
+                          fbm(q * 1.8 + vec2(0.0, uTime * 0.5) + uSeed + 7.0) - 0.5) * h * 1.6 + out_ * h * 0.6;
+        I = max(I, band(q - drift) * (1.0 - float(k) / 8.0));
+      }
+      float wisp = fbm(q * 2.2 + vec2(uTime * 0.4, -uTime * 0.3) + uSeed * 3.0);
+      I *= mix(0.4, 1.2, wisp);
+      I = clamp(I, 0.0, 1.0) * uFade;
+      float a = smoothstep(0.05, 0.6, I) * 0.6;
+      vec3 c = mix(vec3(0.82, 0.9, 0.98), vec3(0.97, 0.99, 1.0), smoothstep(0.3, 0.9, I));
+      outColor = vec4(c * a, a);
+    }`;
+
+  let shard, part, fire, fog;
+  try { shard = program(shardVS, shardFS); part = program(partVS, partFS); fire = program(shardVS, fireFS); fog = program(shardVS, fogFS); }
+  catch (e) { document.getElementById('phase').textContent = 'Ошибка шейдера'; console.error(e); return; }
+
+  const MAX_POINT = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1] / dpr;
+  const quadVao = gl.createVertexArray();
+  gl.bindVertexArray(quadVao);
+  const qb = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, qb);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const aPosLoc = gl.getAttribLocation(shard.p, 'aPos');
+  gl.enableVertexAttribArray(aPosLoc);
+  gl.vertexAttribPointer(aPosLoc, 2, gl.FLOAT, false, 0, 0);
+
+  const partVao = gl.createVertexArray();
+  gl.bindVertexArray(partVao);
+  const pb = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, pb);
+  const STRIDE = 7 * 4;
+  [['aPos', 2, 0], ['aSize', 1, 8], ['aCol', 4, 12]].forEach(([name, size, off]) => {
+    const loc = gl.getAttribLocation(part.p, name);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, STRIDE, off);
+  });
+  gl.bindVertexArray(null);
+
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+  function rng(seed) { let s = Math.floor(seed * 99991) % 2147483647 || 1; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
+  function makeStone(color, cx, cy, r, seed) {
+    const R = rng(seed);
+    // Every stone breaks its own way: variant, shard count and timing are random per stone
+    const variants = color === 0 ? ['crumble', 'collapse', 'split'] : ['shatter', 'slide', 'spin'];
+    const variant = variants[Math.floor(R() * variants.length)];
+    const nCells = variant === 'spin' ? 5 + Math.floor(R() * 2) : 6 + Math.floor(R() * 6);
+    const minD = 0.42 * Math.sqrt(9 / nCells);
+    const cells = [[(R() - 0.5) * 0.3, (R() - 0.5) * 0.3]];
+    let tries = 0;
+    while (cells.length < nCells && tries < 1500) {
+      tries++;
+      const ang = R() * Math.PI * 2, rad = 0.3 + R() * 0.66;
+      const c = [Math.cos(ang) * rad, Math.sin(ang) * rad];
+      if (cells.every((o) => Math.hypot(o[0] - c[0], o[1] - c[1]) > minD)) cells.push(c);
+    }
+    const splitAng = R() * Math.PI * 2;
+    const splitDir = [Math.cos(splitAng), Math.sin(splitAng)];
+    const tJitter = R() * 0.06;
+    // Burning is slower than freezing: fire needs time to read as fire
+    const durMul = (0.9 + R() * 0.2) * (color === 0 ? 1.55 : 1.35);
+    // How the fire starts: 0 from the side of the previous link, 1 from the rim, 2 from the centre, 3 from 2–3 spots
+    const burnMode = Math.floor(R() * 4);
+    const ignite = [];
+    const nSpots = 2 + Math.floor(R() * 2);
+    for (let i = 0; i < 3; i++) {
+      const ang = R() * Math.PI * 2, rad = 0.25 + R() * 0.55;
+      ignite.push(i < nSpots ? [Math.cos(ang) * rad, Math.sin(ang) * rad] : null);
+    }
+    if (!ignite[2]) ignite[2] = ignite[0];
+    const smoke = [];
+    // Soft puffs: dry dust for earth, cold steam for ice
+    const puffs = [];
+    const nPuffs = color === 0 ? (variant === 'collapse' ? 14 : 10) : 10;
+    for (let i = 0; i < nPuffs; i++) {
+      const ang = R() * Math.PI * 2, rad = Math.sqrt(R()) * 0.8;
+      const p0 = [Math.cos(ang) * rad, Math.sin(ang) * rad];
+      if (color === 0) {
+        puffs.push({ p0, v: [Math.cos(ang) * (0.3 + R() * 0.55), Math.sin(ang) * 0.3 + 0.15 + R() * 0.3], delay: R() * 0.35, life: 1.7 + R() * 0.9, s0: 0.35 + R() * 0.3, s1: 1.1 + R() * 1.0, shade: 0.85 + R() * 0.3 });
+      } else {
+        puffs.push({ p0, v: [(R() - 0.5) * 0.7, -(0.6 + R() * 0.9)], delay: R() * 0.45, life: 1.3 + R() * 0.7, s0: 0.3 + R() * 0.25, s1: 1.2 + R() * 1.0, shade: 0.9 + R() * 0.1 });
+      }
+    }
+    const shards = cells.map((c, i) => {
+      const len = Math.hypot(c[0], c[1]) || 1;
+      return { c, dir: i === 0 ? [0, 0.4] : [c[0] / len, c[1] / len], rot: (R() < 0.5 ? -1 : 1) * (0.35 + R() * 0.7), drift: 0.6 + R() * 0.8 };
+    });
+    const parts = [];
+    const count = color === 0 ? 70 : 46;
+    for (let i = 0; i < count; i++) {
+      const ang = R() * Math.PI * 2, rad = Math.sqrt(R()) * 0.95;
+      const p0 = [Math.cos(ang) * rad, Math.sin(ang) * rad];
+      if (color === 0) {
+        parts.push({ p0, v: [(R() - 0.5) * 0.7, (R() - 0.2) * 0.5], size: 1.5 + R() * 3.5, delay: R() * 0.5, shade: 0.7 + R() * 0.5 });
+      } else {
+        const sp = 1.4 + R() * 1.8;
+        parts.push({ p0, v: [Math.cos(ang) * sp, Math.sin(ang) * sp], size: 2 + R() * 3, delay: R() * 0.25, phase: R() * 6.28 });
+      }
+    }
+    // Sparks and smoke leave from wherever the fire front is at that moment (computed at draw time)
+    const sparks = [];
+    if (color === 0) {
+      for (let i = 0; i < 40; i++) {
+        const ang = R() * Math.PI * 2, rad = Math.sqrt(R()) * 0.95;
+        sparks.push({ p0: [Math.cos(ang) * rad, Math.sin(ang) * rad], vx: (R() - 0.5) * 0.6, vy: 0.6 + R() * 0.9, size: 1.5 + R() * 2.5, life: 0.08 + R() * 0.12, lag: R() * 0.04 });
+      }
+      for (let i = 0; i < 14; i++) {
+        const ang = R() * Math.PI * 2, rad = Math.sqrt(R()) * 0.85;
+        smoke.push({ p0: [Math.cos(ang) * rad, Math.sin(ang) * rad], v: [(R() - 0.5) * 0.5, -(1.0 + R() * 0.9)], life: 0.45 + R() * 0.35, s0: 0.25 + R() * 0.2, s1: 0.9 + R() * 0.7, lag: R() * 0.06, shade: 0.8 + R() * 0.4 });
+      }
+    } else {
+      // ice: tiny frost glints that twinkle where the fog has just passed
+      for (let i = 0; i < 30; i++) {
+        const ang = R() * Math.PI * 2, rad = Math.sqrt(R()) * 0.95;
+        sparks.push({ p0: [Math.cos(ang) * rad, Math.sin(ang) * rad], vx: (R() - 0.5) * 0.15, vy: 0.05 + R() * 0.15, size: 2 + R() * 3, life: 0.12 + R() * 0.16, lag: R() * 0.05 });
+      }
+    }
+    return { color, cx, cy, r, seed, cells, shards, parts, sparks, smoke, puffs, variant, splitDir, tJitter, durMul, burnMode, ignite, glyphRot: (R() - 0.5) * 0.5, wave: [0.8, 0.6], depth: 0 };
+  }
+
+  // Big single stones: start breaking together with the first stone of each group
+  let seedShift = 0;
+  let singles;
+  function makeSingles() {
+    singles = [makeStone(0, 250, 225, 120, 1.37 + seedShift), makeStone(1, 710, 225, 120, 4.71 + seedShift)];
+    singles.forEach((st) => { st.depth = 0; st.wave = [0.8, 0.6]; });
+  }
+  makeSingles();
+
+  // A group of `capColor` stones loses its last liberty `lastLib` to a move of the other color.
+  // The stones next to that move break first; the rest follow by neighbour distance (BFS).
+  function buildGroup(ox, capColor, group, lastLib, seed) {
+    const key = (x, y) => x + ',' + y;
+    const nb = (x, y) => [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]];
+    const inGroup = new Set(group.map((p) => key(p[0], p[1])));
+    const walls = new Map();
+    group.forEach(([x, y]) => nb(x, y).forEach(([a, b]) => {
+      const k = key(a, b);
+      if (!inGroup.has(k) && !(a === lastLib[0] && b === lastLib[1])) walls.set(k, [a, b]);
+    }));
+    // BFS from the capturing move; remember which stone each one was reached from (the wave comes from there)
+    const depth = new Map();
+    const from = new Map();
+    const queue = [];
+    group.forEach(([x, y]) => {
+      if (Math.abs(x - lastLib[0]) + Math.abs(y - lastLib[1]) === 1) {
+        depth.set(key(x, y), 0); from.set(key(x, y), lastLib); queue.push([x, y]);
+      }
+    });
+    while (queue.length) {
+      const [x, y] = queue.shift();
+      const d = depth.get(key(x, y));
+      nb(x, y).forEach(([a, b]) => {
+        const k = key(a, b);
+        if (inGroup.has(k) && !depth.has(k)) { depth.set(k, d + 1); from.set(k, [x, y]); queue.push([a, b]); }
+      });
+    }
+    const at = (x, y) => [ox + x * CELL, GRID_Y + y * CELL];
+    const other = 1 - capColor;
+    let s = seed;
+    const captured = group.map(([x, y]) => {
+      const p = at(x, y);
+      const st = makeStone(capColor, p[0], p[1], SR, (s += 1.71));
+      st.depth = depth.get(key(x, y));
+      const src = from.get(key(x, y));
+      st.wave = [x - src[0], y - src[1]];
+      return st;
+    });
+    const wallStones = Array.from(walls.values()).map(([x, y]) => { const p = at(x, y); return makeStone(other, p[0], p[1], SR, (s += 0.93)); });
+    const mp = at(lastLib[0], lastLib[1]);
+    const move = makeStone(other, mp[0], mp[1], SR, (s += 2.3));
+    return { captured, walls: wallStones, move };
+  }
+
+  let groups;
+  function makeGroups() {
+    groups = [
+      buildGroup(GRID_X[0], 1, [[2, 3], [3, 3], [4, 3], [2, 4], [3, 4], [4, 4], [5, 4], [3, 5], [4, 5]], [1, 4], 3.1 + seedShift),
+      buildGroup(GRID_X[1], 0, [[3, 2], [3, 3], [3, 4], [4, 4], [5, 4], [5, 3]], [6, 3], 8.3 + seedShift)
+    ];
+  }
+  makeGroups();
+  const variantNames = { crumble: 'осыпается', collapse: 'проваливается внутрь', split: 'раскалывается надвое', shatter: 'разлетается', slide: 'соскальзывает', spin: 'крупные осколки с вращением' };
+  const burnNames = ['загорается с края', 'загорается по кругу от краёв', 'загорается из центра', 'загорается в нескольких местах'];
+  const fogNames = ['туман с края', 'туман по кругу от краёв', 'туман из центра', 'туман в нескольких местах'];
+  function describeSingles() {
+    document.getElementById('variants').textContent = 'Крупные камни: чёрный — ' + burnNames[singles[0].burnMode] + ', ' + variantNames[singles[0].variant] + '; белый — ' + fogNames[singles[1].burnMode] + ', ' + variantNames[singles[1].variant];
+  }
+  // Layer = BFS distance from the capturing move. Layer N starts N × step after layer 0 starts,
+  // regardless of how long one stone's animation is.
+  const maxDepth = Math.max(...groups.flatMap((g) => g.captured.map((c) => c.depth)));
+
+  const ov = document.getElementById('ov');
+  ov.width = W * dpr; ov.height = H * dpr;
+  const octx = ov.getContext('2d');
+  function drawLayerBadges(show, step) {
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    octx.clearRect(0, 0, W, H);
+    if (!show) return;
+    octx.font = '700 11px Manrope, system-ui, sans-serif';
+    octx.textAlign = 'center';
+    octx.textBaseline = 'middle';
+    groups.forEach((g) => g.captured.forEach((st) => {
+      const x = st.cx + SR * 0.78, y = st.cy - SR * 0.78;
+      octx.fillStyle = 'rgba(240, 136, 62, .95)';
+      octx.beginPath(); octx.arc(x, y, 8, 0, Math.PI * 2); octx.fill();
+      octx.fillStyle = '#1b1006';
+      octx.fillText(String(st.depth + 1), x, y + 0.5);
+    }));
+    GRID_X.forEach((ox, i) => {
+      const n = Math.max(...groups[i].captured.map((c) => c.depth)) + 1;
+      const label = 'Слоёв: ' + n + ' · старт слоя N через N × ' + Math.round(step * 1000) + ' мс';
+      octx.font = '600 13px Manrope, system-ui, sans-serif';
+      octx.fillStyle = 'rgba(58, 40, 18, .9)';
+      octx.fillText(label, ox + (GRID_N - 1) * CELL / 2, GRID_Y + (GRID_N - 1) * CELL + 26);
+    });
+  }
+
+  const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const clamp01 = (x) => Math.min(1, Math.max(0, x));
+
+  // Black stones: burn timeline (fractions of the stone's own animation)
+  const FIRE_END = 0.56, FIRE_CRACK = [0.56, 0.73], FIRE_BREAK = 0.73, FIRE_MAT = 1.75;
+  const burnMat = (t) => FIRE_MAT * smooth(0.0, FIRE_END, t);
+  // White stones: fog wave timeline
+  const ICE_END = 0.5, ICE_CRACK = [0.48, 0.64], ICE_BREAK = 0.64, ICE_MAT = 1.6;
+  const fogMat = (t) => ICE_MAT * smooth(0.0, ICE_END, t);
+  // CPU copy of the shader's frontField without the noise: when does the fire reach point p
+  function frontTime(st, p) {
+    let base;
+    if (st.burnMode === 1) base = 1 - Math.hypot(p[0], p[1]);
+    else if (st.burnMode === 2) base = Math.hypot(p[0], p[1]);
+    else if (st.burnMode === 3) base = Math.min(1, Math.min(...st.ignite.map((s) => Math.hypot(p[0] - s[0], p[1] - s[1]))) / 1.25);
+    else { const l = Math.hypot(st.wave[0], st.wave[1]) || 1; base = ((p[0] * st.wave[0] + p[1] * st.wave[1]) / l + 1) / 2; }
+    const target = Math.min(1, (base * 0.8 + 0.1) / (st.color === 0 ? FIRE_MAT : ICE_MAT));
+    let lo = 0, hi = 1;
+    for (let i = 0; i < 18; i++) { const m = (lo + hi) / 2; if (m * m * (3 - 2 * m) < target) lo = m; else hi = m; }
+    return lo * (st.color === 0 ? FIRE_END : ICE_END);
+  }
+  function setBurnUniforms(U, st) {
+    gl.uniform1i(U.uBurnMode, st.burnMode);
+    const ig = new Float32Array(6);
+    st.ignite.forEach((s, i) => { ig[i * 2] = s[0]; ig[i * 2 + 1] = s[1]; });
+    gl.uniform2fv(U.uIgnite, ig);
+    gl.uniform2f(U.uWaveDir, st.wave[0], st.wave[1]);
+  }
+  function drawPoints(data, kind, additive) {
+    if (!data.length) return;
+    gl.useProgram(part.p);
+    gl.bindVertexArray(partVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, pb);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.DYNAMIC_DRAW);
+    gl.uniform2f(part.u.uRes, W, H);
+    gl.uniform1f(part.u.uDpr, dpr);
+    gl.uniform1i(part.u.uKind, kind);
+    if (additive) gl.blendFunc(gl.ONE, gl.ONE);
+    gl.drawArrays(gl.POINTS, 0, data.length / 7);
+    if (additive) gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  }
+
+  function drawStone(st, t, appear, rawT) {
+    const U = shard.u;
+    const a = appear === undefined ? 1 : appear;
+    // A short pulse marks the moment a stone's own animation starts
+    const grow = 1 + 0.4 * Math.pow(1 - a, 2);
+    gl.useProgram(shard.p);
+    gl.bindVertexArray(quadVao);
+    gl.uniform2f(U.uRes, W, H);
+    gl.uniform2f(U.uCenter, st.cx, st.cy);
+    gl.uniform1f(U.uR, st.r * grow);
+    gl.uniform1i(U.uColor, st.color);
+    const cellsArr = new Float32Array(24);
+    st.cells.forEach((c, i) => { cellsArr[i * 2] = c[0]; cellsArr[i * 2 + 1] = c[1]; });
+    gl.uniform2fv(U.uCells, cellsArr);
+    gl.uniform1i(U.uNCells, st.cells.length);
+    const imp = st.burnMode === 2 ? [0, 0] : st.burnMode === 3 ? st.ignite[0] : [-st.wave[0] * 0.6, -st.wave[1] * 0.6];
+    gl.uniform2f(U.uImpact, imp[0], imp[1]);
+    gl.uniform1f(U.uSeed, st.seed);
+    gl.uniform1i(U.uGlyph, 0);
+    gl.uniform4f(U.uGlyphRect, st.color === 0 ? 0 : 0.5, 0, 0.5, 1);
+    gl.uniform1f(U.uGlyphRot, st.glyphRot);
+
+    // Material flows across the stone from the side that faces the previous link of the chain
+    const fireMat = st.color === 0;
+    const matT = fireMat ? burnMat(t) : fogMat(t);
+    const crackT = fireMat ? 2.1 * smooth(FIRE_CRACK[0], FIRE_CRACK[1], t) : 2.1 * smooth(ICE_CRACK[0], ICE_CRACK[1], t);
+    const breakStart = fireMat ? FIRE_BREAK : ICE_BREAK;
+    setBurnUniforms(U, st);
+    gl.uniform1f(U.uTime, t * DURATION * st.durMul);
+    const brk = clamp01((t - breakStart) / (1 - breakStart));
+    const flash = st.color === 1 ? 0.1 * Math.exp(-Math.pow((t - (ICE_BREAK - 0.01)) / 0.06, 2)) : 0;
+    gl.uniform1f(U.uMat, matT);
+    gl.uniform1f(U.uCrack, crackT);
+    gl.uniform1f(U.uFlash, flash);
+
+    const shake = 0;
+    const wl = Math.hypot(st.wave[0], st.wave[1]) || 1;
+    const wdir = [st.wave[0] / wl, st.wave[1] / wl];
+    const transforms = st.shards.map((sh) => {
+      let off, rot, scale, erode, alpha;
+      const r = st.r;
+      if (st.variant === 'crumble') {
+        // earth: pieces part a little, sag and crumble away
+        const sep = smooth(0, 0.25, brk) * 0.08 * sh.drift;
+        off = [sh.dir[0] * sep * r, sh.dir[1] * sep * r + 0.28 * brk * brk * r];
+        rot = sh.rot * 0.35 * brk;
+        scale = 1 - 0.3 * brk;
+        erode = smooth(0.12, 1.0, brk);
+        alpha = 1 - smooth(0.8, 1.0, brk);
+      } else if (st.variant === 'collapse') {
+        // earth: the lump caves in on itself and turns to dust where it lay
+        const k = smooth(0, 1, brk);
+        off = [-sh.c[0] * 0.4 * k * r, -sh.c[1] * 0.4 * k * r + 0.08 * k * r];
+        rot = sh.rot * 0.2 * brk;
+        scale = 1 - 0.6 * k;
+        erode = smooth(0.05, 0.9, brk);
+        alpha = 1 - smooth(0.75, 1.0, brk);
+      } else if (st.variant === 'split') {
+        // earth: breaks into two halves along a crack that slide apart, then crumble
+        const side = sh.c[0] * st.splitDir[0] + sh.c[1] * st.splitDir[1] >= 0 ? 1 : -1;
+        const sep = smooth(0, 0.35, brk) * 0.2 * r;
+        off = [st.splitDir[0] * side * sep + sh.dir[0] * 0.03 * brk * r, st.splitDir[1] * side * sep + 0.22 * brk * brk * r];
+        rot = side * 0.18 * smooth(0, 0.5, brk) + sh.rot * 0.15 * brk;
+        scale = 1 - 0.25 * brk;
+        erode = smooth(0.3, 1.0, brk);
+        alpha = 1 - smooth(0.8, 1.0, brk);
+      } else if (st.variant === 'slide') {
+        // ice: shards slip off along the chain direction, slowly turning
+        const e = 1 - Math.pow(1 - brk, 2);
+        const fan = 0.45;
+        off = [(wdir[0] + sh.dir[0] * fan) * 0.75 * sh.drift * e * r, (wdir[1] + sh.dir[1] * fan) * 0.75 * sh.drift * e * r + 0.35 * brk * brk * r];
+        rot = sh.rot * 0.9 * e;
+        scale = 1 - 0.2 * brk;
+        erode = 0;
+        alpha = 1 - smooth(0.5, 1.0, brk);
+      } else if (st.variant === 'spin') {
+        // ice: a few big shards burst out and spin
+        const e = 1 - Math.pow(1 - brk, 3);
+        off = [sh.dir[0] * 1.3 * sh.drift * e * r, sh.dir[1] * 1.3 * sh.drift * e * r + 0.2 * brk * brk * r];
+        rot = sh.rot * 4.0 * e;
+        scale = 1 - 0.35 * brk;
+        erode = 0;
+        alpha = 1 - smooth(0.45, 1.0, brk);
+      } else {
+        // ice 'shatter': burst outward
+        const e = 1 - Math.pow(1 - brk, 3);
+        off = [sh.dir[0] * 1.15 * sh.drift * e * r, sh.dir[1] * 1.15 * sh.drift * e * r + 0.25 * brk * brk * r];
+        rot = sh.rot * 1.8 * e;
+        scale = 1 - 0.2 * brk;
+        erode = 0;
+        alpha = 1 - smooth(0.55, 1.0, brk);
+      }
+      return { off, rot, scale, erode, alpha };
+    });
+
+    for (const pass of [1, 0]) {
+      gl.uniform1f(U.uShadow, pass);
+      st.shards.forEach((sh, i) => {
+        const tr = transforms[i];
+        const lift = st.color === 1 ? 1 + 2.5 * smooth(0, 0.6, brk) : 1;
+        const so = pass ? [st.r * 0.05 * lift, st.r * 0.09 * lift] : [0, 0];
+        gl.uniform1i(U.uCell, i);
+        gl.uniform2f(U.uOffset, tr.off[0] + so[0], tr.off[1] + so[1]);
+        gl.uniform1f(U.uRot, tr.rot);
+        gl.uniform2f(U.uPivot, sh.c[0], sh.c[1]);
+        gl.uniform1f(U.uScale, tr.scale);
+        gl.uniform1f(U.uErode, tr.erode);
+        gl.uniform1f(U.uAlpha, Math.min(1, a * 1.5) * (pass ? tr.alpha * (st.color === 1 ? 1 - smooth(0, 0.5, brk) : 1) : tr.alpha));
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      });
+    }
+
+    const tr = rawT === undefined ? t : rawT;
+
+    if (!fireMat && t > 0 && t < ICE_BREAK + 0.1) {
+      // Fog wisps over and around the freezing front
+      const G = fog.u;
+      gl.useProgram(fog.p);
+      gl.bindVertexArray(quadVao);
+      gl.uniform2f(G.uRes, W, H);
+      gl.uniform2f(G.uCenter, st.cx, st.cy);
+      gl.uniform1f(G.uR, st.r * 1.7);
+      gl.uniform2f(G.uOffset, 0, 0);
+      gl.uniform1f(G.uRot, 0);
+      gl.uniform2f(G.uPivot, 0, 0);
+      gl.uniform1f(G.uScale, 1);
+      gl.uniform1f(G.uMat, matT);
+      gl.uniform1f(G.uTime, t * DURATION * st.durMul);
+      gl.uniform1f(G.uSeed, st.seed);
+      gl.uniform1f(G.uFade, 1 - smooth(ICE_END + 0.02, ICE_BREAK + 0.08, t));
+      setBurnUniforms(G, st);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+      // Frost glints twinkle where the fog has passed
+      const k = Math.min(1, st.r / 60) * 0.6 + 0.5;
+      const gd = [];
+      st.sparks.forEach((sp) => {
+        const te = frontTime(st, sp.p0) + sp.lag;
+        const lt = (t - te) / sp.life;
+        if (lt <= 0 || lt >= 1) return;
+        const al = Math.sin(Math.PI * lt) * 0.55;
+        gd.push(st.cx + (sp.p0[0] + sp.vx * lt) * st.r, st.cy + (sp.p0[1] - sp.vy * lt) * st.r, sp.size * k, 0.8 * al, 0.92 * al, 1.0 * al, al * 0.5);
+      });
+      drawPoints(gd, 1, true);
+    }
+
+    if (fireMat && t > 0 && t < FIRE_BREAK + 0.08) {
+      // Smoke rises from where the fire has just passed
+      const sm = [];
+      st.smoke.forEach((pf) => {
+        const te = frontTime(st, pf.p0) + pf.lag;
+        const lt = (tr - te) / pf.life;
+        if (lt <= 0 || lt >= 1) return;
+        const grow = 1 - Math.pow(1 - lt, 2);
+        const x = st.cx + (pf.p0[0] + pf.v[0] * grow) * st.r;
+        const y = st.cy + (pf.p0[1] + pf.v[1] * grow) * st.r;
+        const size = Math.min(MAX_POINT, (pf.s0 + (pf.s1 - pf.s0) * grow) * st.r * 2);
+        const al = 0.3 * Math.min(1, lt * 4) * Math.pow(1 - lt, 1.2);
+        const g = 0.8 * Math.min(1.1, pf.shade);
+        sm.push(x, y, size, g * al, g * 0.99 * al, g * 0.97 * al, al);
+      });
+      drawPoints(sm, 2, false);
+
+      // Flames above the burning front
+      const F = fire.u;
+      gl.useProgram(fire.p);
+      gl.bindVertexArray(quadVao);
+      gl.uniform2f(F.uRes, W, H);
+      gl.uniform2f(F.uCenter, st.cx, st.cy);
+      gl.uniform1f(F.uR, st.r * 1.7);
+      gl.uniform2f(F.uOffset, 0, 0);
+      gl.uniform1f(F.uRot, 0);
+      gl.uniform2f(F.uPivot, 0, 0);
+      gl.uniform1f(F.uScale, 1);
+      gl.uniform1f(F.uMat, matT);
+      gl.uniform1f(F.uTime, t * DURATION * st.durMul);
+      gl.uniform1f(F.uSeed, st.seed);
+      gl.uniform1f(F.uFade, 1 - smooth(FIRE_END + 0.02, FIRE_BREAK, t));
+      setBurnUniforms(F, st);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+      // Sparks jump off the front
+      const k = Math.min(1, st.r / 60) * 0.6 + 0.5;
+      const sd = [];
+      st.sparks.forEach((sp) => {
+        const te = frontTime(st, sp.p0) + sp.lag;
+        const lt = (t - te) / sp.life;
+        if (lt <= 0 || lt >= 1) return;
+        const lx = sp.p0[0] + sp.vx * lt;
+        const ly = sp.p0[1] - sp.vy * lt;
+        const al = (1 - lt) * (lt < 0.15 ? lt / 0.15 : 1);
+        sd.push(st.cx + lx * st.r, st.cy + ly * st.r, sp.size * k, 0.75 * al, 0.45 * al, 0.15 * al, al * 0.45);
+      });
+      drawPoints(sd, 0, true);
+    }
+
+    // Soft puffs: earth throws up dry dust when it breaks, ice gives off cold steam from the moment it cracks
+    const puffData = [];
+    const kSize = st.r;
+    // Puffs outlive the stone: they run on the unclamped clock and keep drifting after the stone is gone
+    st.puffs.forEach((pf) => {
+      const phase = st.color === 0 ? (tr - FIRE_BREAK) / (1 - FIRE_BREAK) : (tr - ICE_END * 0.9) / (1 - ICE_END * 0.9);
+      const endFade = 1;
+      const lt = (phase - pf.delay) / pf.life;
+      if (lt <= 0 || lt >= 1) return;
+      const grow = 1 - Math.pow(1 - lt, 2);
+      const x = st.cx + (pf.p0[0] + pf.v[0] * grow) * st.r;
+      const y = st.cy + (pf.p0[1] + pf.v[1] * grow) * st.r;
+      const size = Math.min(MAX_POINT, (pf.s0 + (pf.s1 - pf.s0) * grow) * kSize * 2);
+      const strength = st.color === 0 ? (st.variant === 'collapse' ? 0.6 : 0.45) : 0.42;
+      const al = strength * Math.min(1, lt * 5) * Math.pow(1 - lt, 1.3) * endFade;
+      const c = st.color === 0 ? [0.53 * pf.shade, 0.38 * pf.shade, 0.23 * pf.shade] : [0.90 * pf.shade, 0.96 * pf.shade, 1.0];
+      puffData.push(x, y, size, c[0] * al, c[1] * al, c[2] * al, al);
+    });
+    if (puffData.length) {
+      gl.useProgram(part.p);
+      gl.bindVertexArray(partVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, pb);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(puffData), gl.DYNAMIC_DRAW);
+      gl.uniform2f(part.u.uRes, W, H);
+      gl.uniform1f(part.u.uDpr, dpr);
+      gl.uniform1i(part.u.uKind, 2);
+      gl.drawArrays(gl.POINTS, 0, puffData.length / 7);
+    }
+
+    if (brk <= 0) return;
+    const data = [];
+    st.parts.forEach((pt) => {
+      const lt = clamp01((brk - pt.delay) / (1 - pt.delay));
+      if (lt <= 0 || lt >= 1) return;
+      let x, y, al, c;
+      if (st.color === 0) {
+        x = st.cx + (pt.p0[0] + pt.v[0] * lt) * st.r;
+        y = st.cy + (pt.p0[1] + pt.v[1] * lt + 0.45 * lt * lt) * st.r;
+        al = Math.pow(1 - lt, 1.4) * 0.9;
+        c = [0.42 * pt.shade, 0.30 * pt.shade, 0.18 * pt.shade];
+      } else {
+        const e = 1 - Math.pow(1 - lt, 2.5);
+        x = st.cx + (pt.p0[0] + pt.v[0] * e) * st.r;
+        y = st.cy + (pt.p0[1] + pt.v[1] * e + 0.3 * lt * lt) * st.r;
+        al = (1 - lt) * (0.55 + 0.45 * Math.sin(lt * 38 + pt.phase));
+        c = [0.85, 0.95, 1.0];
+      }
+      const size = pt.size * (st.r / 125 * 3.2 + 0.6);
+      data.push(x, y, size, c[0] * al, c[1] * al, c[2] * al, al);
+    });
+    if (!data.length) return;
+    gl.useProgram(part.p);
+    gl.bindVertexArray(partVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, pb);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.DYNAMIC_DRAW);
+    gl.uniform2f(part.u.uRes, W, H);
+    gl.uniform1f(part.u.uDpr, dpr);
+    gl.uniform1i(part.u.uKind, st.color);
+    gl.drawArrays(gl.POINTS, 0, data.length / 7);
+  }
+
+  const playBtn = document.getElementById('play');
+  const scrub = document.getElementById('scrub');
+  const phaseEl = document.getElementById('phase');
+  const speedEl = document.getElementById('speed');
+  const stepEl = document.getElementById('step');
+  const HOLD = 2.0;
+  const total = () => CAP_T + maxDepth * Number(stepEl.value) + DURATION * 1.1 * 1.55 + 0.06 + HOLD;
+  let playing = true, clock = 0, last = performance.now();
+
+  // clock is in seconds of the scene
+  function render(time) {
+    const step = Number(stepEl.value);
+    const raw = (st) => (time - CAP_T - st.depth * step - st.tJitter) / (DURATION * st.durMul);
+    const local = (st) => clamp01(raw(st));
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    groups.forEach((g) => {
+      g.walls.forEach((st) => drawStone(st, 0));
+      const appear = clamp01((time - MOVE_T) / DROP);
+      if (appear > 0) drawStone(g.move, 0, appear);
+    });
+    groups.forEach((g) => g.captured.forEach((st) => drawStone(st, local(st), 1, raw(st))));
+    singles.forEach((st) => drawStone(st, local(st), 1, raw(st)));
+    drawLayerBadges(document.getElementById('showLayers').checked, step);
+    phaseEl.textContent = 't = ' + time.toFixed(2).replace('.', ',') + ' с';
+  }
+
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (playing) {
+      clock += dt * Number(speedEl.value);
+      if (clock > total()) clock = 0;
+      scrub.value = String(Math.round(clock / total() * 1000));
+    }
+    render(clock);
+    requestAnimationFrame(frame);
+  }
+
+  playBtn.addEventListener('click', () => { playing = !playing; playBtn.textContent = playing ? 'Пауза' : 'Играть'; });
+  document.getElementById('restart').addEventListener('click', () => { clock = 0; playing = true; playBtn.textContent = 'Пауза'; });
+  document.getElementById('shuffle').addEventListener('click', () => {
+    seedShift += 0.6180339;
+    makeSingles(); makeGroups(); describeSingles();
+    clock = 0; playing = true; playBtn.textContent = 'Пауза';
+  });
+  describeSingles();
+  scrub.addEventListener('input', () => { playing = false; playBtn.textContent = 'Играть'; clock = Number(scrub.value) / 1000 * total(); });
+
+  window.__capture = {
+    setTime: (s) => { playing = false; playBtn.textContent = 'Играть'; clock = s; render(s); },
+    play: () => { playing = true; playBtn.textContent = 'Пауза'; }
+  };
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
