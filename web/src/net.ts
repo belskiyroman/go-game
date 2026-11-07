@@ -1,0 +1,69 @@
+import { app, setApp, emitGameUpdate, type GameEvent, type GameState, type Me } from './store';
+
+// ngrok's free plan shows a warning page to browsers; this header lets API calls through it.
+const headers = { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' };
+
+export async function fetchMe(): Promise<Me | null> {
+  const r = await fetch('/api/me', { headers, credentials: 'same-origin' });
+  return r.ok ? r.json() : null; // null: no session yet
+}
+
+export async function login(nick: string): Promise<Me> {
+  const r = await fetch('/api/login', { method: 'POST', headers, credentials: 'same-origin', body: JSON.stringify({ nick }) });
+  if (!r.ok) throw new Error('login failed');
+  return r.json();
+}
+
+let ws: WebSocket | null = null;
+let retry = 0;
+let wanted = false;
+
+export function connect() {
+  wanted = true;
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const sock = new WebSocket(`${proto}://${location.host}/ws`);
+  ws = sock;
+  sock.onopen = () => { retry = 0; setApp('connected', true); };
+  sock.onclose = () => {
+    if (ws === sock) ws = null;
+    setApp('connected', false);
+    if (wanted) setTimeout(connect, Math.min(5000, 500 * 2 ** retry++));
+  };
+  sock.onmessage = (ev) => {
+    let m: any;
+    try { m = JSON.parse(ev.data); } catch { return; }
+    switch (m.t) {
+      case 'me': setApp('me', { id: m.id, nick: m.nick, tag: m.tag }); break;
+      case 'lobby': setApp('lobby', { players: m.players, online: m.online, settings: m.settings, outgoing: m.outgoing, incoming: m.incoming }); break;
+      case 'game': {
+        const g = m.game as GameState;
+        setApp('clockOffset', g.serverNow - Date.now());
+        setApp('game', g);
+        emitGameUpdate(g, (m.event as GameEvent) ?? null);
+        break;
+      }
+      case 'noGame': setApp('game', null); break;
+      case 'notice': flash(m.text); break;
+      case 'error': break;
+    }
+  };
+}
+
+export function disconnect() { wanted = false; ws?.close(); }
+
+export function send(msg: Record<string, unknown>) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+}
+
+let noticeTimer: number | undefined;
+export function flash(text: string) {
+  setApp('notice', text);
+  clearTimeout(noticeTimer);
+  noticeTimer = window.setTimeout(() => setApp('notice', ''), 3500);
+}
+
+export const isMyGameTurn = () => {
+  const g = app.game;
+  return !!g && g.phase === 'play' && g.you === g.turn;
+};

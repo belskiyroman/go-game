@@ -34,12 +34,12 @@
 <body>
 <main>
   <h1>Появление камня — прототип на WebGL</h1>
-  <p>Чёрный: на доске прожигается иероглиф 火, от него расходится волна дыма, проявляется камень из сухой земли, трещины смыкаются, и он становится углём. Белый: иероглиф 冰 промерзает в доску, расходится волна пара, проявляется ледяной камень и спокойно оттаивает в мрамор. Сверху крупно на повторе. Снизу кликайте по пересечениям — камни ставятся по очереди, начиная с чёрного.</p>
+  <p>На доске прожигается (или промерзает) иероглиф-печать. От него сама доска превращается в сухую землю (или лёд) до краёв будущего камня, затем камень отделяется от доски — поднимается в объём, по краю открывается шов, — и переходит в уголь (или оттаивает в мрамор). Печать горит сверху до конца и гаснет, становясь надписью камня. Сверху крупно на повторе, снизу кликайте по пересечениям.</p>
   <div class="stage">
     <canvas id="bg"></canvas>
     <canvas id="gl"></canvas>
-    <span class="tag" style="left: 26%; top: 2.5%">Чёрный: огонь → уголь</span>
-    <span class="tag" style="left: 74%; top: 2.5%">Белый: лёд → мрамор</span>
+    <span class="tag" style="left: 26%; top: 2.5%">Чёрный: доска → земля → уголь</span>
+    <span class="tag" style="left: 74%; top: 2.5%">Белый: доска → лёд → мрамор</span>
     <span class="tag" style="left: 50%; top: 52%">Кликните по доске</span>
   </div>
   <div class="controls">
@@ -61,7 +61,7 @@
   const W = 960, H = 720;
   const BIG_R = 110, BIG = [[250, 200], [710, 200]];
   const CELL = 36, SR = 17, GN = 9, GX = 480 - CELL * 4, GY = 420;
-  const LOOP = 3.8, LEAD = 0.25;
+  const LOOP = 4.6, LEAD = 0.25;
   const bg = document.getElementById('bg');
   const canvas = document.getElementById('gl');
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -126,7 +126,7 @@
     precision highp float;
     in vec2 vLocal; out vec4 outColor;
     uniform int uColor; uniform float uR; uniform float uSeed; uniform float uShadow;
-    uniform float uReveal; uniform float uMat; uniform float uTime;
+    uniform float uSpread; uniform float uLift; uniform float uInscr; uniform float uMat; uniform float uTime;
     uniform int uThaw; uniform vec2 uThawDir; uniform vec2 uThawDir2;
     ${NOISE}
     float edgeR(vec2 p) {
@@ -137,13 +137,24 @@
       vec2 p = vLocal;
       float r = length(p);
       float rEdge = edgeR(p);
-      if (r > rEdge) discard;
-      // condensing: the stone gathers from the centre outward with a soft, smoky edge
-      float rv = r / rEdge * 0.75 + fbm(p * 3.0 + uSeed) * 0.35;
-      float vis = smoothstep(rv - 0.18, rv, uReveal * 1.2);
-      if (vis <= 0.002) discard;
+      // the board itself changes: from the glyph outward until the change reaches the stone's rim
+      float g0 = glyphLod(p, 0.0), g3 = glyphLod(p, 3.0), g5 = glyphLod(p, 5.0);
+      float near = clamp(g0 + g3 * 1.3 + g5 * 2.6, 0.0, 1.0);
+      float fs = clamp(0.6 * (r / rEdge) + 0.4 * (1.0 - near), 0.0, 1.0) * 0.85 + fbm(p * 3.0 + uSeed) * 0.15;
+      float sprog = uSpread * 1.08;
+      // once the stone separates, a dark gap opens in the board along its rim
+      if (r > rEdge) {
+        float sa = (1.0 - smoothstep(0.0, 0.07, r - rEdge)) * uLift * (1.0 - uLift * 0.55) * 0.8;
+        if (uShadow > 0.5 || sa <= 0.002) discard;
+        outColor = vec4(vec3(0.11, 0.065, 0.03) * sa, sa);
+        return;
+      }
+      float vis = smoothstep(fs - 0.05, fs, sprog);
+      // just ahead of the front the wood is already turning: scorched dry, or rimed with frost
+      float ahead = (1.0 - smoothstep(0.0, 0.1, fs - sprog)) * step(sprog, fs) * step(0.001, uSpread);
+      if (vis <= 0.002 && ahead <= 0.002) discard;
       float aa = 1.0 - smoothstep(rEdge - 1.5 / uR, rEdge, r);
-      if (uShadow > 0.5) { outColor = vec4(0.0, 0.0, 0.0, 0.34 * aa * vis * vis); return; }
+      if (uShadow > 0.5) { if (vis <= 0.002) discard; outColor = vec4(0.0, 0.0, 0.0, 0.34 * aa * vis * uLift); return; }
 
       // hewn shape
       float rr = clamp(r / rEdge, 0.0, 1.0);
@@ -162,6 +173,8 @@
       float ridge = 1.0 - smoothstep(0.0, 0.05 + fwidth(facetEdge) * 1.5, facetEdge);
       vec2 td = normalize(hash2(best * 7.7) - 0.5);
       N = normalize(N + vec3(td * sin(dot(p, td) * 55.0 + hash(best) * 6.28) * 0.045, 0.0));
+      // flat while it is still part of the board, rising into its hewn shape as it separates
+      N = normalize(mix(vec3(0.0, 0.0, 1.0), N, uLift));
       vec3 L = normalize(vec3(-0.5, -0.6, 0.8));
       float diff = max(dot(N, L), 0.0);
       float wrap = clamp((dot(N, L) + 0.3) / 1.3, 0.0, 1.0);
@@ -182,13 +195,13 @@
         float cleat = abs(fract(dot(p, vec2(-bdir.y, bdir.x)) * 4.5 + fbm(p * 5.0 + uSeed) * 0.8) - 0.5);
         coal *= 1.0 - 0.35 * (1.0 - smoothstep(0.0, 0.025 + fwidth(cleat), cleat)) * (0.4 + 0.6 * glassy);
         coal += vec3(0.03) * ridge;
-        coal = mix(coal, vec3(0.8, 0.78, 0.74) * (0.72 + 0.28 * wrap), ga * 0.9);
+        coal = mix(coal, vec3(0.8, 0.78, 0.74) * (0.72 + 0.28 * wrap), ga * 0.9 * uInscr);
         // start: dry cracked earth
         float cq = vorEdge(p * 4.2 + uSeed * 3.0);
         vec3 earth = mix(vec3(0.33, 0.22, 0.13), vec3(0.6, 0.44, 0.28), n1) * (0.82 + 0.36 * n2);
         earth *= mix(0.4, 1.0, smoothstep(0.0, 0.03 + 0.07 * uMat + fwidth(cq), cq));
         earth *= 0.62 + 0.5 * diff;
-        earth = mix(earth, earth * 0.45, ga * 0.6);
+        earth = mix(earth, earth * 0.5, ga * 0.4);
         // the cracks close: black seeps out of the seams into each plate until all of it is coal
         float seep = smoothstep(cq * 1.5, cq * 1.5 + 0.2, (1.0 - uMat) * 1.45);
         seep = max(seep, 1.0 - smoothstep(0.0, 0.15, uMat));
@@ -204,7 +217,7 @@
         vec3 marble = vec3(0.95, 0.945, 0.93) * (0.52 + 0.52 * wrap);
         marble = mix(marble, marble * vec3(0.76, 0.79, 0.85), vein * 0.8);
         marble -= vec3(0.025) * ridge;
-        marble = mix(marble, vec3(0.24, 0.22, 0.2), ga * 0.9);
+        marble = mix(marble, vec3(0.24, 0.22, 0.2), ga * 0.9 * uInscr);
         // start: frozen
         vec3 ice = mix(vec3(0.52, 0.76, 0.91), vec3(0.88, 0.96, 1.0), n1);
         ice += 0.07 * sin(dot(p, vec2(9.0, 5.0)) + n2 * 7.0);
@@ -227,8 +240,11 @@
         float wet = exp(-pow((prog - f) / 0.07, 2.0)) * step(0.001, 1.0 - uMat) * step(0.001, uMat);
         col = mix(col, col * 0.88, wet * 0.35) + vec3(0.85, 0.92, 1.0) * pow(max(Rf.z, 0.0), 30.0) * wet * 0.9;
       }
-      float alpha = vis * aa;
-      outColor = vec4(col * alpha, alpha);
+      vec3 aheadCol = uColor == 0 ? vec3(0.24, 0.13, 0.06) : vec3(0.86, 0.93, 1.0);
+      float aheadA = ahead * (uColor == 0 ? 0.55 : 0.5);
+      vec3 outC = mix(aheadCol * aheadA, col, vis);
+      float alpha = max(vis, aheadA) * aa;
+      outColor = vec4(outC * aa, alpha);
     }`;
 
   // The glyph burnt (black) or frozen (white) into the board where the stone will stand
@@ -349,18 +365,23 @@
       puffs.push({ ang, lag: R() * 0.12, life: 0.75 + R() * 0.35, d0: 0.25 + R() * 0.2, d1: 1.5 + R() * 0.7, s0: 0.35 + R() * 0.2, s1: 0.9 + R() * 0.5, rise: 0.1 + R() * 0.25, shade: 0.9 + R() * 0.15 });
     }
     const sparks = [];
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < 44; i++) {
       const ang = R() * Math.PI * 2, rad = Math.sqrt(R()) * 0.55;
-      sparks.push({ p0: [Math.cos(ang) * rad, Math.sin(ang) * rad], t0: 0.05 + R() * 0.5, life: 0.15 + R() * 0.2, vx: (R() - 0.5) * 0.4, vy: 0.4 + R() * 0.8, size: 1.5 + R() * 2.5 });
+      sparks.push({ p0: [Math.cos(ang) * rad, Math.sin(ang) * rad], t0: 0.05 + R() * 2.6, life: 0.15 + R() * 0.2, vx: (R() - 0.5) * 0.4, vy: 0.4 + R() * 0.8, size: 1.5 + R() * 2.5 });
     }
     const drops = [];
     for (let i = 0; i < 10; i++) {
       const ang = R() * Math.PI * 2, rad = 0.4 + R() * 0.55;
-      drops.push({ p0: [Math.cos(ang) * rad, Math.sin(ang) * rad], t0: 1.5 + R() * 0.75, life: 0.25 + R() * 0.25, size: 2 + R() * 2 });
+      drops.push({ p0: [Math.cos(ang) * rad, Math.sin(ang) * rad], t0: 2.05 + R() * 0.8, life: 0.25 + R() * 0.25, size: 2 + R() * 2 });
+    }
+    const rim = [];
+    for (let i = 0; i < 20; i++) {
+      const ang = R() * Math.PI * 2;
+      rim.push({ ang, t0: 1.5 + R() * 0.45, life: 0.35 + R() * 0.35, out: 0.08 + R() * 0.2, size: 1.5 + R() * 2.5, shade: 0.75 + R() * 0.4 });
     }
     const thaw = Math.floor(R() * 4);
     const ta = R() * Math.PI * 2, tb = ta + Math.PI * (0.6 + R() * 0.8);
-    return { color, cx, cy, r, seed, puffs, sparks, drops, thaw, thawDir: [Math.cos(ta), Math.sin(ta)], thawDir2: [Math.cos(tb), Math.sin(tb)], glyphRot: (R() - 0.5) * 0.5 };
+    return { color, cx, cy, r, seed, puffs, sparks, drops, rim, thaw, thawDir: [Math.cos(ta), Math.sin(ta)], thawDir2: [Math.cos(tb), Math.sin(tb)], glyphRot: (R() - 0.5) * 0.5 };
   }
 
   const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -370,10 +391,10 @@
   const T = {
     burn: [0.0, 0.5],       // the glyph burns / freezes into the board like a seal
     glowPeak: 0.3,
-    glowOut: 0.85,          // the seal burns out; a short still moment
-    wave: 0.8,              // smoke / steam ring starts
-    reveal: [0.95, 1.4],    // the stone condenses
-    mat: { 0: [1.45, 2.25], 1: [1.45, 2.35] } // earth → coal, ice → marble
+    spread: [0.6, 1.5],     // the board turns to dry earth / ice from the glyph out to the stone's rim
+    lift: [1.5, 2.1],       // the stone separates from the board: it rises into shape, a seam opens
+    mat: { 0: [2.0, 2.8], 1: [2.0, 2.9] }, // earth → coal, ice → marble
+    inscr: [2.7, 3.2]       // the burning / frozen seal goes out and becomes the stone's inscription
   };
 
   function drawPoints(data, kind, additive) {
@@ -409,40 +430,32 @@
   function drawPlacement(st, t) {
     if (t < 0) return;
     const r = st.r;
-    // 1. glyph burnt / frozen into the board
     const grow = smooth(T.burn[0], T.burn[1], t);
-    const glow = t < T.glowPeak ? smooth(0, T.glowPeak, t) : 1 - smooth(T.glowPeak, T.glowOut, t);
-    const fade = 1 - smooth(1.4, 1.8, t);
-    if (fade > 0) {
-      quad(decalP, st, 1.0);
-      gl.uniform1f(decalP.u.uGrow, grow);
-      gl.uniform1f(decalP.u.uGlow, glow);
-      gl.uniform1f(decalP.u.uFade, fade);
-      gl.uniform1f(decalP.u.uTime, t);
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    }
-    // embers (fire) or frost glints (ice) while the glyph forms
-    const sp = [];
-    st.sparks.forEach((s) => {
-      const lt = (t - s.t0) / s.life;
-      if (lt <= 0 || lt >= 1) return;
-      const al = Math.sin(Math.PI * lt) * (st.color === 0 ? 0.8 : 0.6);
-      const k = r / 60 * 0.6 + 0.5;
-      if (st.color === 0) sp.push(st.cx + (s.p0[0] + s.vx * lt) * r, st.cy + (s.p0[1] - s.vy * lt) * r, s.size * k, 1.0 * al, 0.55 * al, 0.18 * al, al * 0.5);
-      else sp.push(st.cx + s.p0[0] * r, st.cy + s.p0[1] * r, s.size * k * 1.4, 0.8 * al, 0.92 * al, 1.0 * al, al * 0.5);
-    });
-    drawPoints(sp, st.color === 0 ? 0 : 1, true);
-
-    // 2. the stone condenses out of the smoke / steam
-    const reveal = smooth(T.reveal[0], T.reveal[1], t);
+    // the seal keeps burning / glowing cold on top until the very end, then turns into the inscription
+    // The last stone put on the board keeps its seal smouldering (fire) / glowing cold (ice);
+    // it goes out and becomes the plain inscription only when the next stone is placed.
+    const ext = st.ext === undefined ? Infinity : Math.max(st.ext, T.inscr[0]);
+    const out = Number.isFinite(ext) ? smooth(ext, ext + (T.inscr[1] - T.inscr[0]), t) : 0;
+    let burning = t < T.glowPeak ? smooth(0, T.glowPeak, t) : 1 - 0.35 * smooth(T.glowPeak, 0.8, t);
+    // once the stone has settled, the live seal calms down to a slow breathing glow
+    if (t > T.inscr[0]) burning *= 1 - 0.3 * smooth(T.inscr[0], T.inscr[1], t) + 0.12 * Math.sin((t - T.inscr[0]) * 2.4) * smooth(T.inscr[0], T.inscr[1], t);
+    const glow = burning * (1 - out);
+    const sealFade = 1 - out;
+    const spread = smooth(T.spread[0], T.spread[1], t);
+    const lift = smooth(T.lift[0], T.lift[1], t);
     const m = T.mat[st.color];
     const mat = 1 - smooth(m[0], m[1], t);
-    if (reveal > 0) {
+    const inscr = out;
+
+    // 1. the board turns into the stone's raw material, then the stone separates and changes
+    if (spread > 0) {
       for (const pass of [1, 0]) {
-        quad(stoneP, st, 1.0, pass ? [r * 0.05, r * 0.09] : null);
+        quad(stoneP, st, 1.12, pass ? [r * 0.05 * lift, r * 0.09 * lift] : null);
         gl.uniform1f(stoneP.u.uR, r);
         gl.uniform1f(stoneP.u.uShadow, pass);
-        gl.uniform1f(stoneP.u.uReveal, reveal);
+        gl.uniform1f(stoneP.u.uSpread, spread);
+        gl.uniform1f(stoneP.u.uLift, lift);
+        gl.uniform1f(stoneP.u.uInscr, inscr);
         gl.uniform1f(stoneP.u.uMat, mat);
         gl.uniform1f(stoneP.u.uTime, t);
         gl.uniform1i(stoneP.u.uThaw, st.thaw);
@@ -452,21 +465,40 @@
       }
     }
 
-    // 3. smoke (fire) / steam (ice) ring rolling outward from the glyph
-    const pd = [];
-    st.puffs.forEach((pf) => {
-      const lt = (t - T.wave - pf.lag) / pf.life;
+    // 2. crumbs of earth / frost pop off the rim as the stone breaks away from the board
+    const rd = [];
+    st.rim.forEach((b) => {
+      const lt = (t - b.t0) / b.life;
       if (lt <= 0 || lt >= 1) return;
-      const e = 1 - Math.pow(1 - lt, 2.2);
-      const d = (pf.d0 + (pf.d1 - pf.d0) * e) * r;
-      const x = st.cx + Math.cos(pf.ang) * d;
-      const y = st.cy + Math.sin(pf.ang) * d - pf.rise * e * r;
-      const size = Math.min(MAX_POINT, (pf.s0 + (pf.s1 - pf.s0) * e) * r * 2);
-      const al = (st.color === 0 ? 0.42 : 0.38) * Math.min(1, lt * 5) * Math.pow(1 - lt, 1.4);
-      const c = st.color === 0 ? [0.8, 0.79, 0.77] : [0.92, 0.96, 1.0];
-      pd.push(x, y, size, c[0] * pf.shade * al, c[1] * pf.shade * al, c[2] * Math.min(1, pf.shade) * al, al);
+      const d = (1.0 + b.out * (1 - Math.pow(1 - lt, 2))) * r;
+      const al = Math.sin(Math.PI * lt) * 0.85;
+      const c = st.color === 0 ? [0.42 * b.shade, 0.3 * b.shade, 0.18 * b.shade] : [0.9, 0.95, 1.0];
+      rd.push(st.cx + Math.cos(b.ang) * d, st.cy + Math.sin(b.ang) * d, b.size * (r / 60 * 0.6 + 0.5), c[0] * al, c[1] * al, c[2] * al, al);
     });
-    drawPoints(pd, 2, false);
+    drawPoints(rd, 0, false);
+
+    // 3. the seal on top: burnt / frozen glyph, burning the whole time
+    if (sealFade > 0) {
+      quad(decalP, st, 1.0);
+      gl.uniform1f(decalP.u.uGrow, grow);
+      gl.uniform1f(decalP.u.uGlow, glow);
+      gl.uniform1f(decalP.u.uFade, sealFade);
+      gl.uniform1f(decalP.u.uTime, t);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+    // embers (fire) or frost glints (ice) rising from the seal while it burns
+    const sp = [];
+    const live = t > 2.65 ? 0.6 + ((t - 2.65) % 2.05) : t;
+    st.sparks.forEach((s, si) => {
+      if (t > 2.65 && si % 3) return;
+      const lt = (live - s.t0) / s.life;
+      if (lt <= 0 || lt >= 1 || sealFade <= 0) return;
+      const al = Math.sin(Math.PI * lt) * (st.color === 0 ? 0.8 : 0.6) * sealFade;
+      const k = r / 60 * 0.6 + 0.5;
+      if (st.color === 0) sp.push(st.cx + (s.p0[0] + s.vx * lt) * r, st.cy + (s.p0[1] - s.vy * lt) * r, s.size * k, 1.0 * al, 0.55 * al, 0.18 * al, al * 0.5);
+      else sp.push(st.cx + s.p0[0] * r, st.cy + s.p0[1] * r, s.size * k * 1.4, 0.8 * al, 0.92 * al, 1.0 * al, al * 0.5);
+    });
+    drawPoints(sp, st.color === 0 ? 0 : 1, true);
 
     // 4. ice: a few droplets glint on the thaw line
     if (st.color === 1) {
@@ -494,7 +526,7 @@
   let playing = true, clock = 0, last = performance.now();
 
   // While a stone is appearing, the cursor over it is hidden so the glyph stays visible
-  const ANIM_END = 2.4;
+  const ANIM_END = 3.3;
   let mouse = null;
   canvas.addEventListener('mousemove', (ev) => {
     const rect = canvas.getBoundingClientRect();
@@ -518,6 +550,8 @@
     if (placed.some((s) => s.i === i && s.j === j)) return;
     const st = makeStone(nextColor, cx, cy, SR, (seedN += 1.37));
     st.i = i; st.j = j; st.start = clock;
+    const prev = placed[placed.length - 1];
+    if (prev && prev.ext === undefined) prev.ext = clock - prev.start;
     placed.push(st);
     nextColor = 1 - nextColor;
   });
@@ -549,7 +583,7 @@
   document.getElementById('clear').addEventListener('click', () => { placed = []; nextColor = 0; });
   window.__place = {
     setTime: (s) => { playing = false; playBtn.textContent = 'Играть'; clock = s + LEAD; render(); },
-    place: (i, j) => { const cx = GX + i * CELL, cy = GY + j * CELL; const st = makeStone(nextColor, cx, cy, SR, (seedN += 1.37)); st.i = i; st.j = j; st.start = clock; placed.push(st); nextColor = 1 - nextColor; }
+    place: (i, j) => { const cx = GX + i * CELL, cy = GY + j * CELL; const st = makeStone(nextColor, cx, cy, SR, (seedN += 1.37)); st.i = i; st.j = j; st.start = clock; const prev = placed[placed.length - 1]; if (prev && prev.ext === undefined) prev.ext = clock - prev.start; placed.push(st); nextColor = 1 - nextColor; }
   };
   requestAnimationFrame(frame);
 })();

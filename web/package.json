@@ -1,0 +1,19 @@
+{
+  "name": "go-game-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "gen": "node scripts/gen-effects.mjs",
+    "dev": "vite",
+    "build": "node scripts/gen-effects.mjs && tsc --noEmit && vite build",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "solid-js": "^1.9"
+  },
+  "devDependencies": {
+    "typescript": "^5.7",
+    "vite": "^6",
+    "vite-plugin-solid": "^2"
+  }
+}
