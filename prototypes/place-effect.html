@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Появление камня — прототип WebGL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&text=%E7%81%AB%E5%86%B0&display=block" rel="stylesheet">
+<style>
+  :root { --bg: #141618; --line: #3a3f45; --text: #eceae5; --muted: #a9acaf; --accent: #f0883e; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Manrope', system-ui, sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 24px 16px; display: flex; flex-direction: column; gap: 14px; }
+  h1 { margin: 0; font-size: 22px; }
+  p { margin: 0; color: var(--muted); line-height: 1.5; }
+  .stage { position: relative; width: 100%; aspect-ratio: 960 / 720; border-radius: 14px; overflow: hidden;
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(255, 236, 190, .35), transparent 60%),
+      repeating-linear-gradient(93deg, rgba(110, 62, 18, .07) 0 2px, transparent 2px 9px),
+      repeating-linear-gradient(87deg, rgba(255, 238, 200, .07) 0 1px, transparent 1px 15px),
+      linear-gradient(160deg, #e4b872, #cf9a52);
+    box-shadow: 0 24px 50px rgba(0, 0, 0, .5); }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #gl { cursor: pointer; }
+  .tag { position: absolute; transform: translateX(-50%); font-size: 14px; font-weight: 700; color: #3a2812; background: rgba(255, 240, 210, .6); padding: 4px 10px; border-radius: 999px; white-space: nowrap; pointer-events: none; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  button, select { font: inherit; font-weight: 700; font-size: 15px; min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line); background: #282c30; color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #1b1006; }
+  label { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+  #time { min-width: 110px; font-weight: 700; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Появление камня — прототип на WebGL</h1>
+  <p>Чёрный: на доске прожигается иероглиф 火, от него расходится волна дыма, проявляется камень из сухой земли, трещины смыкаются, и он становится углём. Белый: иероглиф 冰 промерзает в доску, расходится волна пара, проявляется ледяной камень и спокойно оттаивает в мрамор. Сверху крупно на повторе. Снизу кликайте по пересечениям — камни ставятся по очереди, начиная с чёрного.</p>
+  <div class="stage">
+    <canvas id="bg"></canvas>
+    <canvas id="gl"></canvas>
+    <span class="tag" style="left: 26%; top: 2.5%">Чёрный: огонь → уголь</span>
+    <span class="tag" style="left: 74%; top: 2.5%">Белый: лёд → мрамор</span>
+    <span class="tag" style="left: 50%; top: 52%">Кликните по доске</span>
+  </div>
+  <div class="controls">
+    <button type="button" class="primary" id="play">Пауза</button>
+    <button type="button" id="restart">Сначала</button>
+    <button type="button" id="clear">Очистить доску</button>
+    <label>Скорость
+      <select id="speed">
+        <option value="0.25">×0,25</option>
+        <option value="0.5">×0,5</option>
+        <option value="1" selected>×1</option>
+      </select>
+    </label>
+    <span id="time" style="min-width: 360px"></span>
+  </div>
+</main>
+<script>
+(async function () {
+  const W = 960, H = 720;
+  const BIG_R = 110, BIG = [[250, 200], [710, 200]];
+  const CELL = 36, SR = 17, GN = 9, GX = 480 - CELL * 4, GY = 420;
+  const LOOP = 3.8, LEAD = 0.25;
+  const bg = document.getElementById('bg');
+  const canvas = document.getElementById('gl');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  [bg, canvas].forEach((c) => { c.width = W * dpr; c.height = H * dpr; });
+
+  const ctx = bg.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.strokeStyle = 'rgba(58, 40, 18, .82)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < GN; i++) {
+    ctx.beginPath(); ctx.moveTo(GX + i * CELL + .5, GY); ctx.lineTo(GX + i * CELL + .5, GY + (GN - 1) * CELL); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(GX, GY + i * CELL + .5); ctx.lineTo(GX + (GN - 1) * CELL, GY + i * CELL + .5); ctx.stroke();
+  }
+
+  try { await document.fonts.load('180px "Yuji Syuku"', '火冰'); } catch (e) { /* fallback font */ }
+  const atlas = document.createElement('canvas');
+  atlas.width = 512; atlas.height = 256;
+  const a = atlas.getContext('2d');
+  a.fillStyle = '#fff'; a.textAlign = 'center'; a.textBaseline = 'middle';
+  a.font = '180px "Yuji Syuku", serif';
+  a.fillText('火', 128, 136); a.fillText('冰', 384, 136);
+
+  const gl = canvas.getContext('webgl2', { premultipliedAlpha: true, antialias: true, alpha: true });
+
+  const NOISE = `
+    float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+    vec2 hash2(vec2 p) { return vec2(hash(p), hash(p + 17.17)); }
+    float vnoise(vec2 p) {
+      vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+    }
+    float fbm(vec2 p) { float s = 0.0, k = 0.5; for (int i = 0; i < 5; i++) { s += k * vnoise(p); p *= 2.03; k *= 0.5; } return s; }
+    float vorEdge(vec2 p) {
+      vec2 i = floor(p), f = fract(p); float d1 = 8.0, d2 = 8.0;
+      for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+        vec2 g = vec2(x, y); vec2 r = g + hash2(i + g) - f; float d = dot(r, r);
+        if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) { d2 = d; }
+      }
+      return sqrt(d2) - sqrt(d1);
+    }
+    uniform sampler2D uGlyph; uniform vec4 uGlyphRect; uniform float uGlyphRot;
+    float glyphLod(vec2 p, float lod) {
+      float c = cos(uGlyphRot), s = sin(uGlyphRot);
+      vec2 uv = mat2(c, -s, s, c) * p / 1.5 + 0.5;
+      if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0;
+      return textureLod(uGlyph, uGlyphRect.xy + uv * uGlyphRect.zw, lod).a;
+    }`;
+
+  const VS = `#version 300 es
+    in vec2 aPos;
+    uniform vec2 uCenter; uniform float uR; uniform float uQuad; uniform vec2 uRes; uniform vec2 uOffset;
+    out vec2 vLocal;
+    void main() {
+      vLocal = aPos * uQuad;
+      vec2 px = uCenter + vLocal * uR + uOffset;
+      vec2 clip = px / uRes * 2.0 - 1.0; clip.y = -clip.y;
+      gl_Position = vec4(clip, 0.0, 1.0);
+    }`;
+
+  // The stone itself: condenses out of the smoke, then turns from earth to coal / from ice to marble
+  const STONE_FS = `#version 300 es
+    precision highp float;
+    in vec2 vLocal; out vec4 outColor;
+    uniform int uColor; uniform float uR; uniform float uSeed; uniform float uShadow;
+    uniform float uReveal; uniform float uMat; uniform float uTime;
+    uniform int uThaw; uniform vec2 uThawDir; uniform vec2 uThawDir2;
+    ${NOISE}
+    float edgeR(vec2 p) {
+      vec2 d = normalize(p + vec2(1e-5));
+      return 1.0 - 0.055 * vnoise(d * 2.7 + uSeed) - 0.033 * vnoise(d * 7.5 + uSeed * 2.0);
+    }
+    void main() {
+      vec2 p = vLocal;
+      float r = length(p);
+      float rEdge = edgeR(p);
+      if (r > rEdge) discard;
+      // condensing: the stone gathers from the centre outward with a soft, smoky edge
+      float rv = r / rEdge * 0.75 + fbm(p * 3.0 + uSeed) * 0.35;
+      float vis = smoothstep(rv - 0.18, rv, uReveal * 1.2);
+      if (vis <= 0.002) discard;
+      float aa = 1.0 - smoothstep(rEdge - 1.5 / uR, rEdge, r);
+      if (uShadow > 0.5) { outColor = vec4(0.0, 0.0, 0.0, 0.34 * aa * vis * vis); return; }
+
+      // hewn shape
+      float rr = clamp(r / rEdge, 0.0, 1.0);
+      vec3 Ns = normalize(vec3(p / rEdge * 0.55, sqrt(max(0.0, 1.0 - rr * rr))));
+      vec2 sp = p * 1.9 + uSeed * 1.7;
+      vec2 fi = floor(sp), ff = fract(sp);
+      float f1 = 8.0, f2 = 8.0; vec2 best = vec2(0.0);
+      for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+        vec2 g = vec2(x, y); vec2 q = g + hash2(fi + g) - ff; float d = dot(q, q);
+        if (d < f1) { f2 = f1; f1 = d; best = fi + g + hash2(fi + g); } else if (d < f2) { f2 = d; }
+      }
+      vec2 site = (best - uSeed * 1.7) / 1.9;
+      vec2 grad = -0.5 * site / sqrt(1.0 - min(dot(site, site), 0.9)) + (hash2(best * 1.31) - 0.5) * 0.5;
+      vec3 N = normalize(mix(Ns, normalize(vec3(-grad, 1.0)), 0.9));
+      float facetEdge = sqrt(f2) - sqrt(f1);
+      float ridge = 1.0 - smoothstep(0.0, 0.05 + fwidth(facetEdge) * 1.5, facetEdge);
+      vec2 td = normalize(hash2(best * 7.7) - 0.5);
+      N = normalize(N + vec3(td * sin(dot(p, td) * 55.0 + hash(best) * 6.28) * 0.045, 0.0));
+      vec3 L = normalize(vec3(-0.5, -0.6, 0.8));
+      float diff = max(dot(N, L), 0.0);
+      float wrap = clamp((dot(N, L) + 0.3) / 1.3, 0.0, 1.0);
+      vec3 Rf = reflect(-L, N);
+      float ga = glyphLod(p, 0.0);
+      float n1 = fbm(p * 3.0 + uSeed);
+      float n2 = fbm(p * 9.0 + uSeed * 2.0);
+
+      vec3 col;
+      if (uColor == 0) {
+        // final: coal
+        vec2 bdir = normalize(vec2(cos(uSeed * 2.7), sin(uSeed * 2.7)));
+        float layer = vnoise(vec2(dot(p, bdir) * 9.0 + fbm(p * 3.0 + uSeed) * 1.2, uSeed * 3.1));
+        float glassy = smoothstep(0.42, 0.58, layer);
+        vec3 coal = mix(vec3(0.032, 0.031, 0.034), vec3(0.085, 0.087, 0.097), glassy) * (0.5 + 0.8 * wrap)
+                  + vec3(0.62, 0.66, 0.75) * pow(max(Rf.z, 0.0), 38.0) * mix(0.05, 0.85, glassy)
+                  + vec3(0.2, 0.21, 0.25) * pow(max(Rf.z, 0.0), 6.0) * glassy * 0.5;
+        float cleat = abs(fract(dot(p, vec2(-bdir.y, bdir.x)) * 4.5 + fbm(p * 5.0 + uSeed) * 0.8) - 0.5);
+        coal *= 1.0 - 0.35 * (1.0 - smoothstep(0.0, 0.025 + fwidth(cleat), cleat)) * (0.4 + 0.6 * glassy);
+        coal += vec3(0.03) * ridge;
+        coal = mix(coal, vec3(0.8, 0.78, 0.74) * (0.72 + 0.28 * wrap), ga * 0.9);
+        // start: dry cracked earth
+        float cq = vorEdge(p * 4.2 + uSeed * 3.0);
+        vec3 earth = mix(vec3(0.33, 0.22, 0.13), vec3(0.6, 0.44, 0.28), n1) * (0.82 + 0.36 * n2);
+        earth *= mix(0.4, 1.0, smoothstep(0.0, 0.03 + 0.07 * uMat + fwidth(cq), cq));
+        earth *= 0.62 + 0.5 * diff;
+        earth = mix(earth, earth * 0.45, ga * 0.6);
+        // the cracks close: black seeps out of the seams into each plate until all of it is coal
+        float seep = smoothstep(cq * 1.5, cq * 1.5 + 0.2, (1.0 - uMat) * 1.45);
+        seep = max(seep, 1.0 - smoothstep(0.0, 0.15, uMat));
+        col = mix(earth, coal, seep);
+        // a faint warm glow along the seams while they are sealing
+        float seam = (1.0 - smoothstep(0.0, 0.06, cq)) * uMat * (1.0 - uMat) * 4.0;
+        col += vec3(0.5, 0.16, 0.03) * seam * 0.35;
+      } else {
+        // final: honed marble
+        float vw = fbm(p * 1.6 + uSeed);
+        float vv = abs(sin((p.x * 1.4 + p.y * 0.7 + vw * 2.6) * 3.2));
+        float vein = (1.0 - smoothstep(0.0, 0.1, vv)) * 0.75 + (1.0 - smoothstep(0.0, 0.35, vv)) * 0.3;
+        vec3 marble = vec3(0.95, 0.945, 0.93) * (0.52 + 0.52 * wrap);
+        marble = mix(marble, marble * vec3(0.76, 0.79, 0.85), vein * 0.8);
+        marble -= vec3(0.025) * ridge;
+        marble = mix(marble, vec3(0.24, 0.22, 0.2), ga * 0.9);
+        // start: frozen
+        vec3 ice = mix(vec3(0.52, 0.76, 0.91), vec3(0.88, 0.96, 1.0), n1);
+        ice += 0.07 * sin(dot(p, vec2(9.0, 5.0)) + n2 * 7.0);
+        float ga2 = glyphLod(p + (vec2(vnoise(p * 8.0), vnoise(p * 8.0 + 3.1)) - 0.5) * 0.06, 0.0);
+        ice = mix(ice, vec3(0.2, 0.42, 0.62), ga2 * 0.45);
+        ice = mix(ice, vec3(1.0), pow(r, 3.0) * 0.5);
+        ice *= 0.75 + 0.35 * diff;
+        ice += vec3(0.9) * pow(max(Rf.z, 0.0), 60.0);
+        // thaws gently from the rim inward; the thaw line is briefly wet and glossy
+        // thaw pattern: 0 rim → centre, 1 centre → rim, 2 from one side, 3 from two sides
+        float base;
+        if (uThaw == 1) base = r / rEdge;
+        else if (uThaw == 2) base = (dot(p, uThawDir) + 1.0) * 0.5;
+        else if (uThaw == 3) base = clamp(min((dot(p, uThawDir) + 1.0) * 0.5, (dot(p, uThawDir2) + 1.0) * 0.5) * 1.8, 0.0, 1.0);
+        else base = 1.0 - r / rEdge;
+        float f = base * 0.8 + fbm(p * 2.5 + uSeed) * 0.2;
+        float prog = (1.0 - uMat) * 1.15;
+        float th = smoothstep(f - 0.09, f + 0.02, prog);
+        col = mix(ice, marble, th);
+        float wet = exp(-pow((prog - f) / 0.07, 2.0)) * step(0.001, 1.0 - uMat) * step(0.001, uMat);
+        col = mix(col, col * 0.88, wet * 0.35) + vec3(0.85, 0.92, 1.0) * pow(max(Rf.z, 0.0), 30.0) * wet * 0.9;
+      }
+      float alpha = vis * aa;
+      outColor = vec4(col * alpha, alpha);
+    }`;
+
+  // The glyph burnt (black) or frozen (white) into the board where the stone will stand
+  const DECAL_FS = `#version 300 es
+    precision highp float;
+    in vec2 vLocal; out vec4 outColor;
+    uniform int uColor; uniform float uSeed; uniform float uGrow; uniform float uGlow; uniform float uFade; uniform float uTime;
+    ${NOISE}
+    void main() {
+      vec2 p = vLocal;
+      float m = glyphLod(p, 0.0);
+      float halo = glyphLod(p, 3.5);
+      float n = fbm(p * 4.0 + uSeed);
+      float grow = smoothstep(n - 0.12, n, uGrow * 1.15);
+      // a pressed-in mark: a darker soot/frost outline around the glyph and emboss shading
+      // from the blurred glyph, as if a hot (or icy) seal was pushed into the wood
+      float wide = glyphLod(p, 2.2);
+      float e = 0.035;
+      float gx = glyphLod(p + vec2(e, 0.0), 1.6) - glyphLod(p - vec2(e, 0.0), 1.6);
+      float gy = glyphLod(p + vec2(0.0, e), 1.6) - glyphLod(p - vec2(0.0, e), 1.6);
+      float press = clamp(dot(vec2(gx, gy), normalize(vec2(-0.5, -0.6))) * 1.4, -1.0, 1.0);
+      float outline = clamp(wide * 1.8 - m, 0.0, 1.0) * grow;
+      if (uColor == 0) {
+        float core = m * grow;
+        vec3 charC = vec3(0.07, 0.04, 0.025);
+        float al = clamp(core * 0.97 + outline * 0.55, 0.0, 1.0) * uFade;
+        vec3 rgb = charC * core * 0.97 + vec3(0.16, 0.08, 0.035) * outline * 0.55;
+        // emboss: the far wall of the burnt groove catches light, the near one is in shadow
+        rgb += vec3(0.32, 0.2, 0.1) * max(-press, 0.0) * grow * 0.35;
+        rgb *= 1.0 - max(press, 0.0) * 0.3;
+        rgb *= uFade;
+        float flick = 0.75 + 0.35 * vnoise(p * 6.0 + vec2(0.0, uTime * 6.0));
+        // ember edge: a thin line of fire inside the outline that burns out
+        float edgeLine = clamp(wide * 2.2 - m * 1.6, 0.0, 1.0) * m;
+        vec3 ember = vec3(1.0, 0.42, 0.08) * (edgeLine * 1.4 + halo * 0.5) * grow * uGlow * flick;
+        outColor = vec4(rgb + ember, al);
+      } else {
+        float core = m * grow;
+        float crystal = 0.82 + 0.3 * vnoise(p * 34.0 + uSeed);
+        vec3 frost = vec3(0.9, 0.96, 1.0) * crystal;
+        vec3 rim = vec3(0.32, 0.45, 0.58);
+        float al = clamp(core * 0.95 + outline * 0.5, 0.0, 1.0) * uFade;
+        vec3 rgb = frost * core * 0.95 + rim * outline * 0.5;
+        rgb += vec3(0.5, 0.6, 0.7) * max(-press, 0.0) * grow * 0.25;
+        rgb *= 1.0 - max(press, 0.0) * 0.25;
+        rgb *= uFade;
+        vec3 cold = vec3(0.55, 0.8, 1.0) * halo * 0.5 * grow * uGlow;
+        outColor = vec4(rgb + cold * 0.5, al);
+      }
+    }`;
+
+  const PART_VS = `#version 300 es
+    in vec2 aPos; in float aSize; in vec4 aCol;
+    uniform vec2 uRes; uniform float uDpr;
+    out vec4 vCol;
+    void main() {
+      vec2 clip = aPos / uRes * 2.0 - 1.0; clip.y = -clip.y;
+      gl_Position = vec4(clip, 0.0, 1.0);
+      gl_PointSize = aSize * uDpr;
+      vCol = aCol;
+    }`;
+  const PART_FS = `#version 300 es
+    precision highp float;
+    in vec4 vCol; out vec4 outColor; uniform int uKind;
+    void main() {
+      vec2 q = gl_PointCoord - 0.5;
+      float a;
+      if (uKind == 0) a = smoothstep(0.5, 0.15, length(q));
+      else if (uKind == 2) a = exp(-dot(q, q) * 11.0) * smoothstep(0.5, 0.3, length(q));
+      else {
+        vec2 d = abs(q);
+        a = max(smoothstep(0.1, 0.0, d.x) * smoothstep(0.5, 0.0, d.y), smoothstep(0.1, 0.0, d.y) * smoothstep(0.5, 0.0, d.x));
+        a = max(a, smoothstep(0.22, 0.0, length(q)));
+      }
+      outColor = vCol * a;
+    }`;
+
+  function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+  function program(vs, fs) {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+    gl.bindAttribLocation(p, 0, 'aPos');
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    const u = {};
+    for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(p, i).name; u[n] = gl.getUniformLocation(p, n); }
+    return { p, u };
+  }
+  let stoneP, decalP, partP;
+  try { stoneP = program(VS, STONE_FS); decalP = program(VS, DECAL_FS); partP = program(PART_VS, PART_FS); }
+  catch (e) { document.getElementById('time').textContent = 'Ошибка шейдера'; console.error(e); return; }
+
+  const quadVao = gl.createVertexArray(); gl.bindVertexArray(quadVao);
+  const qb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, qb);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+  const partVao = gl.createVertexArray(); gl.bindVertexArray(partVao);
+  const pb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, pb);
+  [['aPos', 2, 0], ['aSize', 1, 8], ['aCol', 4, 12]].forEach(([name, size, off]) => {
+    const loc = gl.getAttribLocation(partP.p, name);
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 28, off);
+  });
+  gl.bindVertexArray(null);
+  const MAX_POINT = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1] / dpr;
+
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+
+  function rng(seed) { let s = Math.floor(seed * 99991) % 2147483647 || 1; const R = () => (s = (s * 16807) % 2147483647) / 2147483647; for (let i = 0; i < 8; i++) R(); return R; }
+  function makeStone(color, cx, cy, r, seed) {
+    const R = rng(seed);
+    const puffs = [];
+    for (let i = 0; i < 26; i++) {
+      const ang = (i / 26) * Math.PI * 2 + (R() - 0.5) * 0.3;
+      puffs.push({ ang, lag: R() * 0.12, life: 0.75 + R() * 0.35, d0: 0.25 + R() * 0.2, d1: 1.5 + R() * 0.7, s0: 0.35 + R() * 0.2, s1: 0.9 + R() * 0.5, rise: 0.1 + R() * 0.25, shade: 0.9 + R() * 0.15 });
+    }
+    const sparks = [];
+    for (let i = 0; i < 22; i++) {
+      const ang = R() * Math.PI * 2, rad = Math.sqrt(R()) * 0.55;
+      sparks.push({ p0: [Math.cos(ang) * rad, Math.sin(ang) * rad], t0: 0.05 + R() * 0.5, life: 0.15 + R() * 0.2, vx: (R() - 0.5) * 0.4, vy: 0.4 + R() * 0.8, size: 1.5 + R() * 2.5 });
+    }
+    const drops = [];
+    for (let i = 0; i < 10; i++) {
+      const ang = R() * Math.PI * 2, rad = 0.4 + R() * 0.55;
+      drops.push({ p0: [Math.cos(ang) * rad, Math.sin(ang) * rad], t0: 1.5 + R() * 0.75, life: 0.25 + R() * 0.25, size: 2 + R() * 2 });
+    }
+    const thaw = Math.floor(R() * 4);
+    const ta = R() * Math.PI * 2, tb = ta + Math.PI * (0.6 + R() * 0.8);
+    return { color, cx, cy, r, seed, puffs, sparks, drops, thaw, thawDir: [Math.cos(ta), Math.sin(ta)], thawDir2: [Math.cos(tb), Math.sin(tb)], glyphRot: (R() - 0.5) * 0.5 };
+  }
+
+  const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const clamp01 = (x) => Math.min(1, Math.max(0, x));
+
+  // Timeline of one placement, seconds from the click
+  const T = {
+    burn: [0.0, 0.5],       // the glyph burns / freezes into the board like a seal
+    glowPeak: 0.3,
+    glowOut: 0.85,          // the seal burns out; a short still moment
+    wave: 0.8,              // smoke / steam ring starts
+    reveal: [0.95, 1.4],    // the stone condenses
+    mat: { 0: [1.45, 2.25], 1: [1.45, 2.35] } // earth → coal, ice → marble
+  };
+
+  function drawPoints(data, kind, additive) {
+    if (!data.length) return;
+    gl.useProgram(partP.p);
+    gl.bindVertexArray(partVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, pb);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.DYNAMIC_DRAW);
+    gl.uniform2f(partP.u.uRes, W, H);
+    gl.uniform1f(partP.u.uDpr, dpr);
+    gl.uniform1i(partP.u.uKind, kind);
+    if (additive) gl.blendFunc(gl.ONE, gl.ONE);
+    gl.drawArrays(gl.POINTS, 0, data.length / 7);
+    if (additive) gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  }
+
+  function quad(prog, st, quadScale, offset) {
+    const U = prog.u;
+    gl.useProgram(prog.p);
+    gl.bindVertexArray(quadVao);
+    gl.uniform2f(U.uRes, W, H);
+    gl.uniform2f(U.uCenter, st.cx, st.cy);
+    gl.uniform1f(U.uR, st.r);
+    gl.uniform1f(U.uQuad, quadScale);
+    gl.uniform2f(U.uOffset, offset ? offset[0] : 0, offset ? offset[1] : 0);
+    gl.uniform1i(U.uGlyph, 0);
+    gl.uniform4f(U.uGlyphRect, st.color === 0 ? 0 : 0.5, 0, 0.5, 1);
+    gl.uniform1f(U.uGlyphRot, st.glyphRot);
+    gl.uniform1i(U.uColor, st.color);
+    gl.uniform1f(U.uSeed, st.seed);
+  }
+
+  function drawPlacement(st, t) {
+    if (t < 0) return;
+    const r = st.r;
+    // 1. glyph burnt / frozen into the board
+    const grow = smooth(T.burn[0], T.burn[1], t);
+    const glow = t < T.glowPeak ? smooth(0, T.glowPeak, t) : 1 - smooth(T.glowPeak, T.glowOut, t);
+    const fade = 1 - smooth(1.4, 1.8, t);
+    if (fade > 0) {
+      quad(decalP, st, 1.0);
+      gl.uniform1f(decalP.u.uGrow, grow);
+      gl.uniform1f(decalP.u.uGlow, glow);
+      gl.uniform1f(decalP.u.uFade, fade);
+      gl.uniform1f(decalP.u.uTime, t);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+    // embers (fire) or frost glints (ice) while the glyph forms
+    const sp = [];
+    st.sparks.forEach((s) => {
+      const lt = (t - s.t0) / s.life;
+      if (lt <= 0 || lt >= 1) return;
+      const al = Math.sin(Math.PI * lt) * (st.color === 0 ? 0.8 : 0.6);
+      const k = r / 60 * 0.6 + 0.5;
+      if (st.color === 0) sp.push(st.cx + (s.p0[0] + s.vx * lt) * r, st.cy + (s.p0[1] - s.vy * lt) * r, s.size * k, 1.0 * al, 0.55 * al, 0.18 * al, al * 0.5);
+      else sp.push(st.cx + s.p0[0] * r, st.cy + s.p0[1] * r, s.size * k * 1.4, 0.8 * al, 0.92 * al, 1.0 * al, al * 0.5);
+    });
+    drawPoints(sp, st.color === 0 ? 0 : 1, true);
+
+    // 2. the stone condenses out of the smoke / steam
+    const reveal = smooth(T.reveal[0], T.reveal[1], t);
+    const m = T.mat[st.color];
+    const mat = 1 - smooth(m[0], m[1], t);
+    if (reveal > 0) {
+      for (const pass of [1, 0]) {
+        quad(stoneP, st, 1.0, pass ? [r * 0.05, r * 0.09] : null);
+        gl.uniform1f(stoneP.u.uR, r);
+        gl.uniform1f(stoneP.u.uShadow, pass);
+        gl.uniform1f(stoneP.u.uReveal, reveal);
+        gl.uniform1f(stoneP.u.uMat, mat);
+        gl.uniform1f(stoneP.u.uTime, t);
+        gl.uniform1i(stoneP.u.uThaw, st.thaw);
+        gl.uniform2f(stoneP.u.uThawDir, st.thawDir[0], st.thawDir[1]);
+        gl.uniform2f(stoneP.u.uThawDir2, st.thawDir2[0], st.thawDir2[1]);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
+    }
+
+    // 3. smoke (fire) / steam (ice) ring rolling outward from the glyph
+    const pd = [];
+    st.puffs.forEach((pf) => {
+      const lt = (t - T.wave - pf.lag) / pf.life;
+      if (lt <= 0 || lt >= 1) return;
+      const e = 1 - Math.pow(1 - lt, 2.2);
+      const d = (pf.d0 + (pf.d1 - pf.d0) * e) * r;
+      const x = st.cx + Math.cos(pf.ang) * d;
+      const y = st.cy + Math.sin(pf.ang) * d - pf.rise * e * r;
+      const size = Math.min(MAX_POINT, (pf.s0 + (pf.s1 - pf.s0) * e) * r * 2);
+      const al = (st.color === 0 ? 0.42 : 0.38) * Math.min(1, lt * 5) * Math.pow(1 - lt, 1.4);
+      const c = st.color === 0 ? [0.8, 0.79, 0.77] : [0.92, 0.96, 1.0];
+      pd.push(x, y, size, c[0] * pf.shade * al, c[1] * pf.shade * al, c[2] * Math.min(1, pf.shade) * al, al);
+    });
+    drawPoints(pd, 2, false);
+
+    // 4. ice: a few droplets glint on the thaw line
+    if (st.color === 1) {
+      const dd = [];
+      st.drops.forEach((s) => {
+        const lt = (t - s.t0) / s.life;
+        if (lt <= 0 || lt >= 1) return;
+        const al = Math.sin(Math.PI * lt) * 0.7;
+        dd.push(st.cx + s.p0[0] * r, st.cy + s.p0[1] * r, s.size * (r / 60 * 0.6 + 0.5), 0.85 * al, 0.93 * al, 1.0 * al, al * 0.5);
+      });
+      drawPoints(dd, 0, true);
+    }
+  }
+
+  const THAW_NAMES = ['от краёв к центру', 'из центра к краям', 'с одной стороны', 'с двух сторон'];
+  let bigLoop = -1;
+  const bigStones = [makeStone(0, BIG[0][0], BIG[0][1], BIG_R, 1.37), makeStone(1, BIG[1][0], BIG[1][1], BIG_R, 4.71)];
+  let placed = [];
+  let nextColor = 0;
+  let seedN = 10;
+
+  const playBtn = document.getElementById('play');
+  const speedEl = document.getElementById('speed');
+  const timeEl = document.getElementById('time');
+  let playing = true, clock = 0, last = performance.now();
+
+  // While a stone is appearing, the cursor over it is hidden so the glyph stays visible
+  const ANIM_END = 2.4;
+  let mouse = null;
+  canvas.addEventListener('mousemove', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    mouse = [(ev.clientX - rect.left) / rect.width * W, (ev.clientY - rect.top) / rect.height * H];
+  });
+  canvas.addEventListener('mouseleave', () => { mouse = null; });
+  function updateCursor() {
+    const busy = mouse && placed.some((st) => clock - st.start < ANIM_END && Math.hypot(mouse[0] - st.cx, mouse[1] - st.cy) < CELL * 0.9);
+    const want = busy ? 'none' : 'pointer';
+    if (canvas.style.cursor !== want) canvas.style.cursor = want;
+  }
+
+  canvas.addEventListener('click', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (ev.clientX - rect.left) / rect.width * W;
+    const y = (ev.clientY - rect.top) / rect.height * H;
+    const i = Math.round((x - GX) / CELL), j = Math.round((y - GY) / CELL);
+    if (i < 0 || j < 0 || i >= GN || j >= GN) return;
+    const cx = GX + i * CELL, cy = GY + j * CELL;
+    if (Math.hypot(x - cx, y - cy) > CELL * 0.45) return;
+    if (placed.some((s) => s.i === i && s.j === j)) return;
+    const st = makeStone(nextColor, cx, cy, SR, (seedN += 1.37));
+    st.i = i; st.j = j; st.start = clock;
+    placed.push(st);
+    nextColor = 1 - nextColor;
+  });
+
+  function render() {
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+    const loopT = (clock % LOOP) - LEAD;
+    const loopN = Math.floor(clock / LOOP);
+    if (loopN !== bigLoop) { bigLoop = loopN; const w = makeStone(1, BIG[1][0], BIG[1][1], BIG_R, 4.71 + loopN * 0.618); w.thaw = ((loopN % 4) + 4) % 4; bigStones[1] = w; }
+    bigStones.forEach((st) => drawPlacement(st, loopT));
+    placed.forEach((st) => drawPlacement(st, clock - st.start));
+    timeEl.textContent = 't = ' + Math.max(0, loopT).toFixed(2).replace('.', ',') + ' с · белый оттаивает ' + THAW_NAMES[bigStones[1].thaw];
+  }
+
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (playing) clock += dt * Number(speedEl.value);
+    render();
+    updateCursor();
+    requestAnimationFrame(frame);
+  }
+
+  playBtn.addEventListener('click', () => { playing = !playing; playBtn.textContent = playing ? 'Пауза' : 'Играть'; });
+  document.getElementById('restart').addEventListener('click', () => { clock = 0; placed = []; nextColor = 0; playing = true; playBtn.textContent = 'Пауза'; });
+  document.getElementById('clear').addEventListener('click', () => { placed = []; nextColor = 0; });
+  window.__place = {
+    setTime: (s) => { playing = false; playBtn.textContent = 'Играть'; clock = s + LEAD; render(); },
+    place: (i, j) => { const cx = GX + i * CELL, cy = GY + j * CELL; const st = makeStone(nextColor, cx, cy, SR, (seedN += 1.37)); st.i = i; st.j = j; st.start = clock; placed.push(st); nextColor = 1 - nextColor; }
+  };
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вид камня — варианты</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&text=%E7%81%AB%E5%86%B0&display=block" rel="stylesheet">
+<style>
+  :root { --bg: #141618; --text: #eceae5; --muted: #a9acaf; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Manrope', system-ui, sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 24px 16px; display: flex; flex-direction: column; gap: 14px; }
+  h1 { margin: 0; font-size: 22px; }
+  p { margin: 0; color: var(--muted); line-height: 1.5; }
+  .stage { position: relative; width: 100%; aspect-ratio: 960 / 640; border-radius: 14px; overflow: hidden;
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(255, 236, 190, .35), transparent 60%),
+      repeating-linear-gradient(93deg, rgba(110, 62, 18, .07) 0 2px, transparent 2px 9px),
+      repeating-linear-gradient(87deg, rgba(255, 238, 200, .07) 0 1px, transparent 1px 15px),
+      linear-gradient(160deg, #e4b872, #cf9a52);
+    box-shadow: 0 24px 50px rgba(0, 0, 0, .5); }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .tag { position: absolute; transform: translateX(-50%); font-size: 14px; font-weight: 700; color: #3a2812; background: rgba(255, 240, 210, .6); padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Вид камня: как будто высечен из камня</h1>
+  <p>Форма «грубо отёсанный». Чёрный — каменный уголь (слоистый, с блестящими и тусклыми полосами), белый — три природных матовых камня. Сверху камни крупно, снизу — в реальном размере на доске 19×19. Справа внизу для сравнения нынешний гладкий камень.</p>
+  <div class="stage">
+    <canvas id="bg"></canvas>
+    <canvas id="gl"></canvas>
+    <span class="tag" style="left: 16.7%; top: 2.5%">Уголь + белый мрамор</span>
+    <span class="tag" style="left: 50%; top: 2.5%">Уголь + алебастр</span>
+    <span class="tag" style="left: 83.3%; top: 2.5%">Уголь + меловой известняк</span>
+    <span class="tag" style="left: 83.3%; top: 88%">Сейчас: гладкий</span>
+  </div>
+</main>
+<script>
+(async function () {
+  const W = 960, H = 640;
+  const bg = document.getElementById('bg');
+  const canvas = document.getElementById('gl');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  [bg, canvas].forEach((c) => { c.width = W * dpr; c.height = H * dpr; });
+
+  // grid lines under the real-size stones
+  const CELL = 32, GY = 470;
+  const ctx = bg.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.strokeStyle = 'rgba(58, 40, 18, .82)';
+  ctx.lineWidth = 1;
+  [160, 480, 800].forEach((cx) => {
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath(); ctx.moveTo(cx + i * CELL + .5, GY - CELL * 1.5); ctx.lineTo(cx + i * CELL + .5, GY + CELL * 1.5); ctx.stroke();
+    }
+    for (let j = -1; j <= 1; j++) {
+      ctx.beginPath(); ctx.moveTo(cx - CELL * 2.5, GY + j * CELL + .5); ctx.lineTo(cx + CELL * 2.5, GY + j * CELL + .5); ctx.stroke();
+    }
+  });
+
+  try { await document.fonts.load('180px "Yuji Syuku"', '火冰'); } catch (e) { /* fallback font */ }
+  const atlas = document.createElement('canvas');
+  atlas.width = 512; atlas.height = 256;
+  const a = atlas.getContext('2d');
+  a.fillStyle = '#fff'; a.textAlign = 'center'; a.textBaseline = 'middle';
+  a.font = '180px "Yuji Syuku", serif';
+  a.fillText('火', 128, 136); a.fillText('冰', 384, 136);
+
+  const gl = canvas.getContext('webgl2', { premultipliedAlpha: true, antialias: true, alpha: true });
+
+  const VS = `#version 300 es
+    in vec2 aPos;
+    uniform vec2 uCenter; uniform float uR; uniform vec2 uRes; uniform vec2 uOffset;
+    out vec2 vLocal;
+    void main() {
+      vLocal = aPos * 1.08;
+      vec2 px = uCenter + vLocal * uR + uOffset;
+      vec2 clip = px / uRes * 2.0 - 1.0; clip.y = -clip.y;
+      gl_Position = vec4(clip, 0.0, 1.0);
+    }`;
+
+  const FS = `#version 300 es
+    precision highp float;
+    in vec2 vLocal; out vec4 outColor;
+    uniform int uColor; uniform int uVariant; uniform float uR; uniform float uSeed; uniform float uShadow;
+    uniform sampler2D uGlyph; uniform vec4 uGlyphRect; uniform float uGlyphRot;
+    float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+    vec2 hash2(vec2 p) { return vec2(hash(p), hash(p + 17.17)); }
+    float vnoise(vec2 p) {
+      vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+    }
+    float fbm(vec2 p) { float s = 0.0, k = 0.5; for (int i = 0; i < 5; i++) { s += k * vnoise(p); p *= 2.03; k *= 0.5; } return s; }
+    float glyphAt(vec2 p) {
+      float c = cos(uGlyphRot), s = sin(uGlyphRot);
+      vec2 uv = mat2(c, -s, s, c) * p / 1.5 + 0.5;
+      if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0;
+      return texture(uGlyph, uGlyphRect.xy + uv * uGlyphRect.zw).a;
+    }
+    // irregular, hewn outline
+    int shapeOf() { return uVariant >= 4 ? 2 : uVariant; }
+    float edgeR(vec2 p) {
+      int sh = shapeOf();
+      if (sh == 3) return 1.0;
+      float amp = sh == 0 ? 0.025 : (sh == 1 ? 0.016 : 0.055);
+      vec2 d = normalize(p + vec2(1e-5));
+      return 1.0 - amp * vnoise(d * 2.7 + uSeed) - amp * 0.6 * vnoise(d * 7.5 + uSeed * 2.0);
+    }
+    void main() {
+      vec2 p = vLocal;
+      float r = length(p);
+      float re = edgeR(p);
+      if (r > re) discard;
+      float aa = 1.0 - smoothstep(re - 1.5 / uR, re, r);
+      if (uShadow > 0.5) { outColor = vec4(0.0, 0.0, 0.0, 0.34 * aa); return; }
+
+      float rr = clamp(r / re, 0.0, 1.0);
+      vec3 Ns = normalize(vec3(p / re * 0.55, sqrt(max(0.0, 1.0 - rr * rr))));
+      vec3 N = Ns;
+      float ridge = 0.0;
+      vec2 site = vec2(0.0);
+      int sh = shapeOf();
+      if (sh < 3) {
+        // chiselled facets: each Voronoi cell is a flat plane tangent to the dome at its site
+        float sc = sh == 0 ? 1.55 : (sh == 1 ? 2.5 : 1.9);
+        vec2 sp = p * sc + uSeed * 1.7;
+        vec2 i = floor(sp), f = fract(sp);
+        float d1 = 8.0, d2 = 8.0; vec2 best = vec2(0.0);
+        for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+          vec2 g = vec2(x, y); vec2 o = hash2(i + g); vec2 q = g + o - f; float d = dot(q, q);
+          if (d < d1) { d2 = d1; d1 = d; best = i + g + o; } else if (d < d2) { d2 = d; }
+        }
+        site = (best - uSeed * 1.7) / sc;
+        float r2 = min(dot(site, site), 0.9);
+        vec2 grad = -0.5 * site / sqrt(1.0 - r2);
+        grad += (hash2(best * 1.31) - 0.5) * (sh == 2 ? 0.5 : 0.22);
+        vec3 Nf = normalize(vec3(-grad, 1.0));
+        float blend = sh == 0 ? 0.9 : (sh == 1 ? 0.8 : 0.9);
+        N = normalize(mix(Ns, Nf, blend));
+        float edge = sqrt(d2) - sqrt(d1);
+        ridge = 1.0 - smoothstep(0.0, 0.05 + fwidth(edge) * 1.5, edge);
+        // chisel marks: fine parallel grooves, a different direction on every facet
+        if (sh >= 1) {
+          vec2 td = normalize(hash2(best * 7.7) - 0.5);
+          float marks = sin(dot(p, td) * (sh == 1 ? 95.0 : 55.0) + hash(best) * 6.28);
+          N = normalize(N + vec3(td * marks * (sh == 1 ? 0.06 : 0.045), 0.0));
+        }
+      }
+      bool natural = uVariant >= 6;
+      bool matte = uVariant >= 4 && !natural;
+      bool rough = uVariant == 5;
+      if (rough) {
+        // fine pitted surface: tiny bumps in the normal
+        vec2 bn = vec2(vnoise(p * 38.0 + uSeed), vnoise(p * 38.0 + uSeed + 9.1)) - 0.5;
+        N = normalize(N + vec3(bn * 0.22, 0.0));
+      }
+      vec3 L = normalize(vec3(-0.5, -0.6, 0.8));
+      float diff = max(dot(N, L), 0.0);
+      vec3 Rf = reflect(-L, N);
+      float grain = fbm(p * 14.0 + uSeed);
+      float ga = glyphAt(p);
+      vec3 col;
+      if (natural && uColor == 0) {
+        // Coal: layered, alternating dull and glassy bands; bright layers catch a hard,
+        // slightly cold sheen, fine cleat cracks run across the layers
+        vec2 bdir = normalize(vec2(cos(uSeed * 2.7), sin(uSeed * 2.7)));
+        float along = dot(p, bdir);
+        float layer = vnoise(vec2(along * 9.0 + fbm(p * 3.0 + uSeed) * 1.2, uSeed * 3.1));
+        float glassy = smoothstep(0.42, 0.58, layer);
+        float wrap = clamp((dot(N, L) + 0.25) / 1.25, 0.0, 1.0);
+        vec3 base = mix(vec3(0.032, 0.031, 0.034), vec3(0.085, 0.087, 0.097), glassy);
+        float spec = pow(max(Rf.z, 0.0), 38.0);
+        col = base * (0.5 + 0.8 * wrap)
+            + vec3(0.62, 0.66, 0.75) * spec * mix(0.05, 0.85, glassy)
+            + vec3(0.2, 0.21, 0.25) * pow(max(Rf.z, 0.0), 6.0) * glassy * 0.5;
+        float cleat = abs(fract(dot(p, vec2(-bdir.y, bdir.x)) * 4.5 + fbm(p * 5.0 + uSeed) * 0.8) - 0.5);
+        col *= 1.0 - 0.35 * (1.0 - smoothstep(0.0, 0.025 + fwidth(cleat), cleat)) * (0.4 + 0.6 * glassy);
+        col += vec3(0.03) * ridge;
+        col = mix(col, vec3(0.8, 0.78, 0.74) * (0.72 + 0.28 * wrap), ga * 0.9);
+      } else if (natural) {
+        float wrap = clamp((dot(N, L) + 0.35) / 1.35, 0.0, 1.0);
+        if (uVariant == 6) {
+          // honed white marble: matte, faint soft grey-blue veins, no dots
+          float w = fbm(p * 1.6 + uSeed);
+          float v = abs(sin((p.x * 1.4 + p.y * 0.7 + w * 2.6) * 3.2));
+          float vein = (1.0 - smoothstep(0.0, 0.12, v)) * 0.6 + (1.0 - smoothstep(0.0, 0.35, v)) * 0.25;
+          col = vec3(0.95, 0.945, 0.93) * (0.52 + 0.52 * wrap);
+          col = mix(col, col * vec3(0.8, 0.82, 0.87), vein * 0.75);
+        } else if (uVariant == 7) {
+          // alabaster: warm, milky, a soft inner cloudiness and a little light coming through
+          float cloud = fbm(p * 1.3 + uSeed);
+          col = vec3(0.96, 0.94, 0.89) * (0.6 + 0.45 * wrap);
+          col *= 0.96 + 0.07 * (cloud - 0.5);
+          col += vec3(0.05, 0.045, 0.03) * (1.0 - rr) ;
+        } else {
+          // chalk-white limestone: very flat and dry, a barely visible soft texture
+          float soft = fbm(p * 7.0 + uSeed);
+          col = vec3(0.94, 0.935, 0.915) * (0.5 + 0.52 * wrap);
+          col *= 0.975 + 0.05 * (soft - 0.5);
+        }
+        col -= vec3(0.025) * ridge;
+        col = mix(col, vec3(0.24, 0.22, 0.2), ga * 0.9);
+      } else if (matte) {
+        // no gloss at all: soft wrapped light, visible mineral grain, pits for the rough one
+        float wrap = clamp((dot(N, L) + 0.35) / 1.35, 0.0, 1.0);
+        float grain2 = fbm(p * 26.0 + uSeed * 3.0);
+        float pits = rough ? smoothstep(0.72, 0.9, vnoise(p * 55.0 + uSeed * 5.0)) : 0.0;
+        if (uColor == 0) {
+          col = vec3(0.075, 0.072, 0.078) * (0.45 + 0.9 * wrap);
+          col *= 0.78 + 0.32 * grain + 0.18 * (grain2 - 0.5);
+          col += vec3(0.025) * ridge;
+          col *= 1.0 - 0.45 * pits;
+          col = mix(col, vec3(0.78, 0.76, 0.72) * (0.7 + 0.3 * wrap), ga * 0.9);
+        } else {
+          col = vec3(0.9, 0.885, 0.85) * (0.5 + 0.55 * wrap);
+          col *= 0.9 + 0.14 * grain + 0.1 * (grain2 - 0.5);
+          col -= vec3(0.03) * ridge;
+          col *= 1.0 - 0.22 * pits;
+          col = mix(col, vec3(0.24, 0.22, 0.2), ga * 0.9);
+        }
+      } else if (uColor == 0) {
+        float spec = pow(max(Rf.z, 0.0), uVariant == 3 ? 28.0 : 16.0) * (uVariant == 3 ? 0.55 : 0.32);
+        col = vec3(0.045) + vec3(0.12) * diff + vec3(spec);
+        if (uVariant < 3) { col *= 0.85 + 0.3 * grain; col += vec3(0.03) * ridge; }
+        col = mix(col, vec3(0.83, 0.81, 0.77) * (0.75 + 0.25 * diff), ga * 0.92);
+      } else {
+        float spec = pow(max(Rf.z, 0.0), uVariant == 3 ? 28.0 : 16.0) * (uVariant == 3 ? 0.32 : 0.16);
+        col = vec3(0.95, 0.94, 0.91) * (0.6 + 0.43 * diff) + vec3(spec);
+        if (uVariant < 3) { col *= 0.93 + 0.12 * grain; col -= vec3(0.03) * ridge; }
+        else col *= 1.0 - 0.012 * sin((p.x * 0.8 + p.y * 0.5) * 30.0 + vnoise(p * 4.0) * 2.0);
+        col = mix(col, vec3(0.23, 0.21, 0.19), ga * 0.9);
+      }
+      outColor = vec4(col * aa, aa);
+    }`;
+
+  function compile(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  const U = {};
+  for (let i = 0; i < gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS); i++) { const n = gl.getActiveUniform(prog, i).name; U[n] = gl.getUniformLocation(prog, n); }
+
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'aPos'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.useProgram(prog);
+  gl.uniform2f(U.uRes, W, H);
+  gl.uniform1i(U.uGlyph, 0);
+
+  function stone(color, variant, cx, cy, r, seed) {
+    gl.uniform1i(U.uColor, color);
+    gl.uniform1i(U.uVariant, variant);
+    gl.uniform1f(U.uR, r);
+    gl.uniform1f(U.uSeed, seed);
+    gl.uniform2f(U.uCenter, cx, cy);
+    gl.uniform4f(U.uGlyphRect, color === 0 ? 0 : 0.5, 0, 0.5, 1);
+    gl.uniform1f(U.uGlyphRot, ((seed * 7.3) % 1 - 0.5) * 0.5);
+    for (const pass of [1, 0]) {
+      gl.uniform1f(U.uShadow, pass);
+      gl.uniform2f(U.uOffset, pass ? r * 0.05 : 0, pass ? r * 0.09 : 0);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+  }
+
+  [6, 7, 8].forEach((v, k) => {
+    const cx = 160 + k * 320;
+    stone(0, v, cx - 72, 190, 66, 1.3 + k);
+    stone(1, v, cx + 72, 190, 66, 4.7 + k);
+    stone(0, v, cx - CELL, GY, 15.5, 2.1 + k);
+    stone(1, v, cx, GY, 15.5, 5.3 + k);
+    stone(0, v, cx + CELL, GY - CELL, 15.5, 3.9 + k);
+  });
+  // today's smooth stone, for comparison
+  stone(0, 3, 800 + CELL, GY + CELL, 15.5, 9.1);
+  stone(1, 3, 800 + 2 * CELL, GY + CELL, 15.5, 9.7);
+})();
+</script>
+</body>
+</html>
