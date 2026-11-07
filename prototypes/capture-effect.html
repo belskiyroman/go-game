@@ -153,7 +153,7 @@
   const shardFS = `#version 300 es
     precision highp float;
     in vec2 vLocal; out vec4 outColor;
-    uniform int uColor; uniform int uCell; uniform vec2 uCells[12]; uniform int uNCells;
+    uniform int uColor; uniform int uCell; uniform vec2 uCells[24]; uniform int uNCells;
     uniform float uMat; uniform float uCrack; uniform vec2 uImpact; uniform float uErode; uniform float uAlpha;
     uniform float uShadow; uniform float uFlash; uniform float uSeed; uniform float uR; uniform float uTime;
     uniform sampler2D uGlyph; uniform vec4 uGlyphRect; uniform float uGlyphRot;
@@ -171,7 +171,7 @@
       float r = length(p);
       if (r > 1.0) discard;
       float d1 = 1e9, d2 = 1e9; int id = -1;
-      for (int i = 0; i < 12; i++) {
+      for (int i = 0; i < 24; i++) {
         if (i >= uNCells) break;
         float d = distance(p, uCells[i]);
         if (d < d1) { d2 = d1; d1 = d; id = i; } else if (d < d2) { d2 = d; }
@@ -284,21 +284,31 @@
   const partVS = `#version 300 es
     in vec2 aPos; in float aSize; in vec4 aCol;
     uniform vec2 uRes; uniform float uDpr;
-    out vec4 vCol;
+    out vec4 vCol; out float vRot;
     void main() {
       vec2 clip = aPos / uRes * 2.0 - 1.0; clip.y = -clip.y;
       gl_Position = vec4(clip, 0.0, 1.0);
       gl_PointSize = aSize * uDpr;
       vCol = aCol;
+      vRot = fract(sin(float(gl_VertexID) * 12.9898 + 4.1) * 43758.5453) * 6.2831;
     }`;
   const partFS = `#version 300 es
     precision highp float;
-    in vec4 vCol; out vec4 outColor; uniform int uKind;
+    in vec4 vCol; in float vRot; out vec4 outColor; uniform int uKind;
     void main() {
       vec2 q = gl_PointCoord - 0.5;
       float a;
       if (uKind == 0) {
         a = smoothstep(0.5, 0.15, length(q));
+      } else if (uKind == 3) {
+        // ice chip: a sharp irregular sliver with a bright edge
+        float c = cos(vRot), s = sin(vRot);
+        vec2 r = mat2(c, -s, s, c) * q;
+        float d = abs(r.x) * 1.9 + abs(r.y) * 0.95 + r.x * r.y * 1.4;
+        a = 1.0 - smoothstep(0.4, 0.46, d);
+        float rim = smoothstep(0.26, 0.42, d) * a;
+        outColor = vec4(mix(vec3(0.62, 0.8, 0.93), vec3(1.0), rim) * vCol.a * a, vCol.a * a * 0.9);
+        return;
       } else if (uKind == 2) {
         float d2 = dot(q, q);
         a = exp(-d2 * 11.0) * smoothstep(0.5, 0.3, length(q));
@@ -426,15 +436,33 @@
     // Every stone breaks its own way: variant, shard count and timing are random per stone
     const variants = color === 0 ? ['crumble', 'collapse', 'split'] : ['shatter', 'slide', 'spin'];
     const variant = variants[Math.floor(R() * variants.length)];
-    const nCells = variant === 'spin' ? 5 + Math.floor(R() * 2) : 6 + Math.floor(R() * 6);
-    const minD = 0.42 * Math.sqrt(9 / nCells);
-    const cells = [[(R() - 0.5) * 0.3, (R() - 0.5) * 0.3]];
-    let tries = 0;
-    while (cells.length < nCells && tries < 1500) {
-      tries++;
-      const ang = R() * Math.PI * 2, rad = 0.3 + R() * 0.66;
-      const c = [Math.cos(ang) * rad, Math.sin(ang) * rad];
-      if (cells.every((o) => Math.hypot(o[0] - c[0], o[1] - c[1]) > minD)) cells.push(c);
+    let cells;
+    if (color === 0) {
+      const nCells = 6 + Math.floor(R() * 6);
+      const minD = 0.42 * Math.sqrt(9 / nCells);
+      cells = [[(R() - 0.5) * 0.3, (R() - 0.5) * 0.3]];
+      let tries = 0;
+      while (cells.length < nCells && tries < 1500) {
+        tries++;
+        const ang = R() * Math.PI * 2, rad = 0.3 + R() * 0.66;
+        const c = [Math.cos(ang) * rad, Math.sin(ang) * rad];
+        if (cells.every((o) => Math.hypot(o[0] - c[0], o[1] - c[1]) > minD)) cells.push(c);
+      }
+    } else {
+      // Crushed ice: fine fragments packed around a crush point, bigger slabs further away
+      const ca = R() * Math.PI * 2, cr = R() * 0.45;
+      const crush = [Math.cos(ca) * cr, Math.sin(ca) * cr];
+      const nCells = variant === 'spin' ? 10 + Math.floor(R() * 4) : 16 + Math.floor(R() * 8);
+      cells = [crush];
+      let tries = 0;
+      while (cells.length < nCells && tries < 4000) {
+        tries++;
+        const ang = R() * Math.PI * 2, rad = Math.sqrt(R()) * 1.0;
+        const c = [Math.cos(ang) * rad, Math.sin(ang) * rad];
+        const dc = Math.hypot(c[0] - crush[0], c[1] - crush[1]);
+        const minD = 0.12 + 0.38 * Math.min(1, dc / 1.2) * (variant === 'spin' ? 1.25 : 1);
+        if (cells.every((o) => Math.hypot(o[0] - c[0], o[1] - c[1]) > minD)) cells.push(c);
+      }
     }
     const splitAng = R() * Math.PI * 2;
     const splitDir = [Math.cos(splitAng), Math.sin(splitAng)];
@@ -465,18 +493,26 @@
     }
     const shards = cells.map((c, i) => {
       const len = Math.hypot(c[0], c[1]) || 1;
-      return { c, dir: i === 0 ? [0, 0.4] : [c[0] / len, c[1] / len], rot: (R() < 0.5 ? -1 : 1) * (0.35 + R() * 0.7), drift: 0.6 + R() * 0.8 };
+      return { c, dir: i === 0 ? [0, 0.4] : [c[0] / len, c[1] / len], rot: (R() < 0.5 ? -1 : 1) * (0.35 + R() * 0.7), drift: 0.6 + R() * 0.8, windLag: R() * 0.3, windSpeed: 0.7 + R() * 0.6 };
     });
     const parts = [];
-    const count = color === 0 ? 70 : 46;
+    const count = color === 0 ? 70 : 90;
     for (let i = 0; i < count; i++) {
       const ang = R() * Math.PI * 2, rad = Math.sqrt(R()) * 0.95;
       const p0 = [Math.cos(ang) * rad, Math.sin(ang) * rad];
       if (color === 0) {
-        parts.push({ p0, v: [(R() - 0.5) * 0.7, (R() - 0.2) * 0.5], size: 1.5 + R() * 3.5, delay: R() * 0.5, shade: 0.7 + R() * 0.5 });
+        parts.push({ p0, v: [(R() - 0.5) * 0.7, (R() - 0.2) * 0.5], size: 1.5 + R() * 3.5, delay: R() * 0.5, shade: 0.7 + R() * 0.5, wl: R() * 0.3, ws: 0.8 + R() * 0.8 });
       } else {
-        const sp = 1.4 + R() * 1.8;
-        parts.push({ p0, v: [Math.cos(ang) * sp, Math.sin(ang) * sp], size: 2 + R() * 3, delay: R() * 0.25, phase: R() * 6.28 });
+        const sp = 0.5 + R() * 1.6;
+        parts.push({ p0, v: [Math.cos(ang) * sp, Math.sin(ang) * sp], size: 1 + R() * 2.2, delay: R() * 0.3, phase: R() * 6.28, wl: R() * 0.3, ws: 0.8 + R() * 0.8 });
+      }
+    }
+    const chips = [];
+    if (color === 1) {
+      for (let i = 0; i < 40; i++) {
+        const ang = R() * Math.PI * 2, rad = Math.sqrt(R()) * 0.9;
+        const sp = 0.3 + R() * 1.2;
+        chips.push({ p0: [Math.cos(ang) * rad, Math.sin(ang) * rad], v: [Math.cos(ang) * sp, Math.sin(ang) * sp], size: 3 + R() * 6, delay: R() * 0.25, wl: R() * 0.3, ws: 0.8 + R() * 0.8, phase: R() * 6.28 });
       }
     }
     // Sparks and smoke leave from wherever the fire front is at that moment (computed at draw time)
@@ -497,7 +533,12 @@
         sparks.push({ p0: [Math.cos(ang) * rad, Math.sin(ang) * rad], vx: (R() - 0.5) * 0.15, vy: 0.05 + R() * 0.15, size: 2 + R() * 3, life: 0.12 + R() * 0.16, lag: R() * 0.05 });
       }
     }
-    return { color, cx, cy, r, seed, cells, shards, parts, sparks, smoke, puffs, variant, splitDir, tJitter, durMul, burnMode, ignite, glyphRot: (R() - 0.5) * 0.5, wave: [0.8, 0.6], depth: 0 };
+    const gust = [];
+    for (let i = 0; i < 6; i++) {
+      const ang = R() * Math.PI * 2, rad = Math.sqrt(R()) * 0.7;
+      gust.push({ p0: [Math.cos(ang) * rad, Math.sin(ang) * rad], lag: R() * 0.35, dist: 2.5 + R() * 2.5, s0: 0.5 + R() * 0.3, s1: 1.4 + R() * 0.8, wob: R() * 6.28 });
+    }
+    return { color, cx, cy, r, seed, cells, shards, parts, chips, sparks, smoke, puffs, gust, variant, splitDir, tJitter, durMul, burnMode, ignite, glyphRot: (R() - 0.5) * 0.5, wave: [0.8, 0.6], depth: 0 };
   }
 
   // Big single stones: start breaking together with the first stone of each group
@@ -602,6 +643,18 @@
   const clamp01 = (x) => Math.min(1, Math.max(0, x));
 
   // Black stones: burn timeline (fractions of the stone's own animation)
+  // Wind that blows the piles away once the whole group has settled
+  const WIND = (() => { const l = Math.hypot(1, -0.3); return [1 / l, -0.3 / l]; })();
+  const WIND_PAUSE = 0.5, WIND_DUR = 1.6, WIND_SWEEP = 0.35;
+  function windStartOf(list, step) {
+    return CAP_T + Math.max(...list.map((st) => st.depth * step + st.tJitter + DURATION * st.durMul)) + WIND_PAUSE;
+  }
+  function windOf(st, list, time, step) {
+    const xs = list.map((s) => s.cx);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const sweep = maxX > minX ? (st.cx - minX) / (maxX - minX) * WIND_SWEEP : 0;
+    return Math.max(0, (time - windStartOf(list, step) - sweep) / WIND_DUR);
+  }
   const FIRE_END = 0.56, FIRE_CRACK = [0.56, 0.73], FIRE_BREAK = 0.73, FIRE_MAT = 1.75;
   const burnMat = (t) => FIRE_MAT * smooth(0.0, FIRE_END, t);
   // White stones: fog wave timeline
@@ -640,7 +693,7 @@
     if (additive) gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   }
 
-  function drawStone(st, t, appear, rawT) {
+  function drawStone(st, t, appear, rawT, wind = 0) {
     const U = shard.u;
     const a = appear === undefined ? 1 : appear;
     // A short pulse marks the moment a stone's own animation starts
@@ -651,7 +704,7 @@
     gl.uniform2f(U.uCenter, st.cx, st.cy);
     gl.uniform1f(U.uR, st.r * grow);
     gl.uniform1i(U.uColor, st.color);
-    const cellsArr = new Float32Array(24);
+    const cellsArr = new Float32Array(48);
     st.cells.forEach((c, i) => { cellsArr[i * 2] = c[0]; cellsArr[i * 2 + 1] = c[1]; });
     gl.uniform2fv(U.uCells, cellsArr);
     gl.uniform1i(U.uNCells, st.cells.length);
@@ -678,68 +731,63 @@
     const shake = 0;
     const wl = Math.hypot(st.wave[0], st.wave[1]) || 1;
     const wdir = [st.wave[0] / wl, st.wave[1] / wl];
+    // Pieces break off and come to rest where the stone stood; later the wind blows the pile away
+    const e3 = 1 - Math.pow(1 - brk, 3);
     const transforms = st.shards.map((sh) => {
-      let off, rot, scale, erode, alpha;
+      let off, rot, scale, erode;
       const r = st.r;
       if (st.variant === 'crumble') {
-        // earth: pieces part a little, sag and crumble away
-        const sep = smooth(0, 0.25, brk) * 0.08 * sh.drift;
-        off = [sh.dir[0] * sep * r, sh.dir[1] * sep * r + 0.28 * brk * brk * r];
-        rot = sh.rot * 0.35 * brk;
-        scale = 1 - 0.3 * brk;
-        erode = smooth(0.12, 1.0, brk);
-        alpha = 1 - smooth(0.8, 1.0, brk);
+        const sep = e3 * 0.12 * sh.drift;
+        off = [sh.dir[0] * sep * r, sh.dir[1] * sep * r + 0.1 * e3 * r];
+        rot = sh.rot * 0.35 * e3; scale = 1 - 0.32 * e3; erode = 0.55 * smooth(0.1, 1.0, brk);
       } else if (st.variant === 'collapse') {
-        // earth: the lump caves in on itself and turns to dust where it lay
-        const k = smooth(0, 1, brk);
-        off = [-sh.c[0] * 0.4 * k * r, -sh.c[1] * 0.4 * k * r + 0.08 * k * r];
-        rot = sh.rot * 0.2 * brk;
-        scale = 1 - 0.6 * k;
-        erode = smooth(0.05, 0.9, brk);
-        alpha = 1 - smooth(0.75, 1.0, brk);
+        off = [-sh.c[0] * 0.45 * e3 * r, -sh.c[1] * 0.45 * e3 * r + 0.05 * e3 * r];
+        rot = sh.rot * 0.25 * e3; scale = 1 - 0.55 * e3; erode = 0.6 * smooth(0.05, 1.0, brk);
       } else if (st.variant === 'split') {
-        // earth: breaks into two halves along a crack that slide apart, then crumble
         const side = sh.c[0] * st.splitDir[0] + sh.c[1] * st.splitDir[1] >= 0 ? 1 : -1;
-        const sep = smooth(0, 0.35, brk) * 0.2 * r;
-        off = [st.splitDir[0] * side * sep + sh.dir[0] * 0.03 * brk * r, st.splitDir[1] * side * sep + 0.22 * brk * brk * r];
-        rot = side * 0.18 * smooth(0, 0.5, brk) + sh.rot * 0.15 * brk;
-        scale = 1 - 0.25 * brk;
-        erode = smooth(0.3, 1.0, brk);
-        alpha = 1 - smooth(0.8, 1.0, brk);
+        const sep = smooth(0, 0.45, brk) * 0.22 * r;
+        off = [st.splitDir[0] * side * sep + sh.dir[0] * 0.04 * e3 * r, st.splitDir[1] * side * sep + 0.06 * e3 * r];
+        rot = side * 0.18 * e3 + sh.rot * 0.15 * e3; scale = 1 - 0.28 * e3; erode = 0.5 * smooth(0.3, 1.0, brk);
       } else if (st.variant === 'slide') {
-        // ice: shards slip off along the chain direction, slowly turning
-        const e = 1 - Math.pow(1 - brk, 2);
-        const fan = 0.45;
-        off = [(wdir[0] + sh.dir[0] * fan) * 0.75 * sh.drift * e * r, (wdir[1] + sh.dir[1] * fan) * 0.75 * sh.drift * e * r + 0.35 * brk * brk * r];
-        rot = sh.rot * 0.9 * e;
-        scale = 1 - 0.2 * brk;
-        erode = 0;
-        alpha = 1 - smooth(0.5, 1.0, brk);
+        off = [(wdir[0] + sh.dir[0] * 0.45) * 0.28 * sh.drift * e3 * r, (wdir[1] + sh.dir[1] * 0.45) * 0.28 * sh.drift * e3 * r];
+        rot = sh.rot * 0.9 * e3; scale = 1 - 0.25 * e3; erode = 0;
       } else if (st.variant === 'spin') {
-        // ice: a few big shards burst out and spin
-        const e = 1 - Math.pow(1 - brk, 3);
-        off = [sh.dir[0] * 1.3 * sh.drift * e * r, sh.dir[1] * 1.3 * sh.drift * e * r + 0.2 * brk * brk * r];
-        rot = sh.rot * 4.0 * e;
-        scale = 1 - 0.35 * brk;
-        erode = 0;
-        alpha = 1 - smooth(0.45, 1.0, brk);
+        off = [sh.dir[0] * 0.36 * sh.drift * e3 * r, sh.dir[1] * 0.36 * sh.drift * e3 * r];
+        rot = sh.rot * 3.0 * e3; scale = 1 - 0.3 * e3; erode = 0;
       } else {
-        // ice 'shatter': burst outward
-        const e = 1 - Math.pow(1 - brk, 3);
-        off = [sh.dir[0] * 1.15 * sh.drift * e * r, sh.dir[1] * 1.15 * sh.drift * e * r + 0.25 * brk * brk * r];
-        rot = sh.rot * 1.8 * e;
-        scale = 1 - 0.2 * brk;
-        erode = 0;
-        alpha = 1 - smooth(0.55, 1.0, brk);
+        off = [sh.dir[0] * 0.3 * sh.drift * e3 * r, sh.dir[1] * 0.3 * sh.drift * e3 * r];
+        rot = sh.rot * 1.6 * e3; scale = 1 - 0.25 * e3; erode = 0;
+      }
+      let alpha = 1;
+      if (wind > 0) {
+        const w = clamp01((wind - sh.windLag) / 0.7);
+        const d = w * w * (3.5 + sh.windSpeed * 3) * r;
+        off = [off[0] + WIND[0] * d - WIND[1] * Math.sin(w * 5 + sh.rot * 3) * 0.15 * r * w,
+               off[1] + WIND[1] * d + WIND[0] * Math.sin(w * 5 + sh.rot * 3) * 0.15 * r * w];
+        rot += sh.rot * 2.5 * w;
+        if (st.color === 0) erode = Math.max(erode, erode + (1 - erode) * smooth(0.0, 0.9, w));
+        alpha = 1 - smooth(0.45, 1.0, w);
       }
       return { off, rot, scale, erode, alpha };
     });
+
+    // A low pile of dust (earth) or frost powder (ice) settles under the pieces
+    if (brk > 0) {
+      const w = clamp01(wind / 0.8);
+      const d = w * w * 3 * st.r;
+      const size = Math.min(MAX_POINT, st.r * 2.3 * (0.6 + 0.4 * e3) * (1 + 0.6 * w));
+      const al = (st.color === 0 ? 0.42 : 0.3) * smooth(0, 0.6, brk) * (1 - smooth(0.2, 1.0, w));
+      const c = st.color === 0 ? [0.5, 0.36, 0.22] : [0.9, 0.95, 1.0];
+      if (al > 0.001) drawPoints([st.cx + WIND[0] * d, st.cy + 0.06 * st.r + WIND[1] * d, size, c[0] * al, c[1] * al, c[2] * al, al], 2, false);
+      gl.useProgram(shard.p);
+      gl.bindVertexArray(quadVao);
+    }
 
     for (const pass of [1, 0]) {
       gl.uniform1f(U.uShadow, pass);
       st.shards.forEach((sh, i) => {
         const tr = transforms[i];
-        const lift = st.color === 1 ? 1 + 2.5 * smooth(0, 0.6, brk) : 1;
+        const lift = st.color === 1 ? 1 + 1.6 * Math.sin(Math.PI * Math.min(1, brk * 1.15)) : 1;
         const so = pass ? [st.r * 0.05 * lift, st.r * 0.09 * lift] : [0, 0];
         gl.uniform1i(U.uCell, i);
         gl.uniform2f(U.uOffset, tr.off[0] + so[0], tr.off[1] + so[1]);
@@ -747,7 +795,7 @@
         gl.uniform2f(U.uPivot, sh.c[0], sh.c[1]);
         gl.uniform1f(U.uScale, tr.scale);
         gl.uniform1f(U.uErode, tr.erode);
-        gl.uniform1f(U.uAlpha, Math.min(1, a * 1.5) * (pass ? tr.alpha * (st.color === 1 ? 1 - smooth(0, 0.5, brk) : 1) : tr.alpha));
+        gl.uniform1f(U.uAlpha, Math.min(1, a * 1.5) * tr.alpha * (pass ? 0.85 : 1));
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       });
     }
@@ -868,35 +916,76 @@
     }
 
     if (brk <= 0) return;
+    // Specks settle into the pile (earth crumbs / ice grains) and stay until the wind takes them
     const data = [];
     st.parts.forEach((pt) => {
       const lt = clamp01((brk - pt.delay) / (1 - pt.delay));
-      if (lt <= 0 || lt >= 1) return;
+      if (lt <= 0) return;
+      const e = 1 - Math.pow(1 - lt, 3);
       let x, y, al, c;
       if (st.color === 0) {
-        x = st.cx + (pt.p0[0] + pt.v[0] * lt) * st.r;
-        y = st.cy + (pt.p0[1] + pt.v[1] * lt + 0.45 * lt * lt) * st.r;
-        al = Math.pow(1 - lt, 1.4) * 0.9;
+        x = st.cx + (pt.p0[0] + pt.v[0] * 0.6 * e) * st.r;
+        y = st.cy + (pt.p0[1] + pt.v[1] * 0.6 * e) * st.r;
+        al = 0.9 * Math.min(1, lt * 4);
         c = [0.42 * pt.shade, 0.30 * pt.shade, 0.18 * pt.shade];
       } else {
-        const e = 1 - Math.pow(1 - lt, 2.5);
-        x = st.cx + (pt.p0[0] + pt.v[0] * e) * st.r;
-        y = st.cy + (pt.p0[1] + pt.v[1] * e + 0.3 * lt * lt) * st.r;
-        al = (1 - lt) * (0.55 + 0.45 * Math.sin(lt * 38 + pt.phase));
-        c = [0.85, 0.95, 1.0];
+        // snow powder settling around the pile
+        x = st.cx + (pt.p0[0] + pt.v[0] * 0.32 * e) * st.r;
+        y = st.cy + (pt.p0[1] + pt.v[1] * 0.32 * e) * st.r;
+        al = Math.min(1, lt * 4) * (0.7 + 0.15 * Math.sin(pt.phase));
+        c = [0.95, 0.97, 1.0];
       }
+      if (wind > 0) {
+        const w = clamp01((wind - pt.wl) / 0.7);
+        const d = w * w * (4 + pt.ws * 4) * st.r;
+        x += WIND[0] * d; y += WIND[1] * d + Math.sin(w * 7 + pt.p0[0] * 5) * 0.2 * st.r * w;
+        al *= 1 - smooth(0.35, 1.0, w);
+      }
+      if (al <= 0.001) return;
       const size = pt.size * (st.r / 125 * 3.2 + 0.6);
       data.push(x, y, size, c[0] * al, c[1] * al, c[2] * al, al);
     });
-    if (!data.length) return;
-    gl.useProgram(part.p);
-    gl.bindVertexArray(partVao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, pb);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.DYNAMIC_DRAW);
-    gl.uniform2f(part.u.uRes, W, H);
-    gl.uniform1f(part.u.uDpr, dpr);
-    gl.uniform1i(part.u.uKind, st.color);
-    gl.drawArrays(gl.POINTS, 0, data.length / 7);
+    drawPoints(data, 0, false);
+
+    // Ice: angular chips of crushed ice of all sizes, lying among the bigger slabs
+    if (st.chips.length) {
+      const cd = [];
+      st.chips.forEach((ch) => {
+        const lt = clamp01((brk - ch.delay) / (1 - ch.delay));
+        if (lt <= 0) return;
+        const e = 1 - Math.pow(1 - lt, 3);
+        let x = st.cx + (ch.p0[0] + ch.v[0] * 0.32 * e) * st.r;
+        let y = st.cy + (ch.p0[1] + ch.v[1] * 0.32 * e) * st.r;
+        let al = 0.92 * Math.min(1, lt * 5);
+        if (wind > 0) {
+          const w = clamp01((wind - ch.wl) / 0.7);
+          const d = w * w * (4 + ch.ws * 3.5) * st.r;
+          x += WIND[0] * d; y += WIND[1] * d + Math.sin(w * 6 + ch.phase) * 0.15 * st.r * w;
+          al *= 1 - smooth(0.4, 1.0, w);
+        }
+        if (al <= 0.001) return;
+        const size = ch.size * (st.r / 125 * 3.2 + 0.55);
+        cd.push(x, y, size, al, al, al, al);
+      });
+      drawPoints(cd, 3, false);
+    }
+
+    // The gust lifts a little cloud of dust / frost powder as it blows the pile away
+    if (wind > 0) {
+      const gd = [];
+      st.gust.forEach((g) => {
+        const w = clamp01((wind - g.lag) / 0.65);
+        if (w <= 0 || w >= 1) return;
+        const ease = 1 - Math.pow(1 - w, 2);
+        const x = st.cx + (g.p0[0] + WIND[0] * g.dist * ease) * st.r;
+        const y = st.cy + (g.p0[1] + WIND[1] * g.dist * ease + Math.sin(w * 4 + g.wob) * 0.2) * st.r;
+        const size = Math.min(MAX_POINT, (g.s0 + (g.s1 - g.s0) * ease) * st.r * 2);
+        const al = (st.color === 0 ? 0.32 : 0.26) * Math.min(1, w * 5) * Math.pow(1 - w, 1.2);
+        const c = st.color === 0 ? [0.53, 0.38, 0.23] : [0.9, 0.95, 1.0];
+        gd.push(x, y, size, c[0] * al, c[1] * al, c[2] * al, al);
+      });
+      drawPoints(gd, 2, false);
+    }
   }
 
   const playBtn = document.getElementById('play');
@@ -905,7 +994,7 @@
   const speedEl = document.getElementById('speed');
   const stepEl = document.getElementById('step');
   const HOLD = 2.0;
-  const total = () => CAP_T + maxDepth * Number(stepEl.value) + DURATION * 1.1 * 1.55 + 0.06 + HOLD;
+  const total = () => { const step = Number(stepEl.value); return Math.max(...groups.map((g) => windStartOf(g.captured, step)), windStartOf(singles, step)) + WIND_SWEEP + WIND_DUR + 0.6; };
   let playing = true, clock = 0, last = performance.now();
 
   // clock is in seconds of the scene
@@ -925,8 +1014,8 @@
       const appear = clamp01((time - MOVE_T) / DROP);
       if (appear > 0) drawStone(g.move, 0, appear);
     });
-    groups.forEach((g) => g.captured.forEach((st) => drawStone(st, local(st), 1, raw(st))));
-    singles.forEach((st) => drawStone(st, local(st), 1, raw(st)));
+    groups.forEach((g) => g.captured.forEach((st) => drawStone(st, local(st), 1, raw(st), windOf(st, g.captured, time, step))));
+    singles.forEach((st) => drawStone(st, local(st), 1, raw(st), windOf(st, singles, time, step)));
     drawLayerBadges(document.getElementById('showLayers').checked, step);
     phaseEl.textContent = 't = ' + time.toFixed(2).replace('.', ',') + ' с';
   }
