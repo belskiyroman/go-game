@@ -148,11 +148,15 @@ export function Game() {
             <span class="muted">Время партии</span>
             <strong>{fmtLong(played())}</strong>
           </div>
-          <div class="gameclock" aria-label={`Счёт встреч: ${nickOf('b')} ${g().h2h?.b ?? 0}, ${nickOf('w')} ${g().h2h?.w ?? 0}`}>
+          <div class="gameclock h2h-box" aria-label={`Счёт встреч: ${nickOf('b')} ${g().h2h?.b ?? 0}, ${nickOf('w')} ${g().h2h?.w ?? 0}`}>
             <span class="muted">Счёт встреч</span>
-            <strong class="h2h-score">
-              <span class="mini b" aria-hidden="true">火</span>{g().h2h?.b ?? 0} : {g().h2h?.w ?? 0}<span class="mini w" aria-hidden="true">冰</span>
-            </strong>
+            <div class="h2h-row" aria-hidden="true">
+              <span class="h2h-nick" style={{ 'text-align': 'right' }}>{nickOf('b')}</span>
+              <strong class="h2h-score">
+                <span class="mini b">火</span>{g().h2h?.b ?? 0} : {g().h2h?.w ?? 0}<span class="mini w">冰</span>
+              </strong>
+              <span class="h2h-nick">{nickOf('w')}</span>
+            </div>
           </div>
           <For each={['b', 'w'] as Side[]}>
             {(s) => (
@@ -304,7 +308,7 @@ export function Game() {
                 <div style={{ 'font-family': "'Unbounded', 'Manrope', sans-serif", 'font-size': '22px', 'font-weight': 700, 'margin-top': '6px' }}><Who s={g().result!.winner} size={30} /></div>
                 <div class="muted" style={{ 'margin-top': '4px' }}>{resultSub()}</div>
                 <div class="h2h-line" style={{ 'margin-top': '10px' }}>
-                  Счёт встреч: <span class="mini b" aria-hidden="true">火</span><strong>{g().h2h?.b ?? 0}</strong>{g().result!.winner === 'b' ? <span class="plus">+1</span> : ''} : <strong>{g().h2h?.w ?? 0}</strong>{g().result!.winner === 'w' ? <span class="plus">+1</span> : ''}<span class="mini w" aria-hidden="true">冰</span>
+                  Счёт встреч: <span class="mini b" aria-hidden="true">火</span><strong>{g().h2h?.b ?? 0}</strong> : <strong>{g().h2h?.w ?? 0}</strong><span class="mini w" aria-hidden="true">冰</span>
                 </div>
               </div>
               <Show when={g().result!.score}>
