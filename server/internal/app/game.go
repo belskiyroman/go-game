@@ -72,6 +72,10 @@ type Game struct {
 	Played  time.Duration // accumulated while the clock was stopped
 	Running time.Time     // when the clock last started; zero while stopped
 
+	// ClockLeft is the current player's time left when the game was saved: the clocks
+	// stand still while the server restarts
+	ClockLeft time.Duration
+
 	Dead  map[int]bool
 	Agree [3]bool
 

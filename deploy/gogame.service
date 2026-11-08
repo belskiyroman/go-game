@@ -1,0 +1,20 @@
+[Unit]
+Description=Go game server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=gogame
+Group=gogame
+ExecStart=/opt/gogame/server -addr 127.0.0.1:3000 -web /opt/gogame/web -data /var/lib/gogame/sessions.json
+Restart=always
+RestartSec=2
+# the server only writes its data folder
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/gogame
+
+[Install]
+WantedBy=multi-user.target

@@ -150,21 +150,28 @@ func (st *SessionStore) loop() {
 				st.dirty = true
 			}
 		}
-		if !st.dirty {
-			st.mu.Unlock()
-			continue
-		}
-		list := make([]*Session, 0, len(st.byToken))
-		for _, s := range st.byToken {
-			list = append(list, s)
-		}
-		st.dirty = false
 		st.mu.Unlock()
-		data, _ := json.Marshal(list)
-		_ = os.MkdirAll(filepath.Dir(st.path), 0o755)
-		tmp := st.path + ".tmp"
-		if os.WriteFile(tmp, data, 0o600) == nil {
-			_ = os.Rename(tmp, st.path)
-		}
+		st.Save()
+	}
+}
+
+// Save writes the sessions to the file if something changed (also called when the server stops).
+func (st *SessionStore) Save() {
+	st.mu.Lock()
+	if !st.dirty {
+		st.mu.Unlock()
+		return
+	}
+	list := make([]*Session, 0, len(st.byToken))
+	for _, s := range st.byToken {
+		list = append(list, s)
+	}
+	st.dirty = false
+	st.mu.Unlock()
+	data, _ := json.Marshal(list)
+	_ = os.MkdirAll(filepath.Dir(st.path), 0o755)
+	tmp := st.path + ".tmp"
+	if os.WriteFile(tmp, data, 0o600) == nil {
+		_ = os.Rename(tmp, st.path)
 	}
 }

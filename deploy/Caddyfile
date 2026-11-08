@@ -1,0 +1,6 @@
+# Caddy gets and renews the HTTPS certificate (Let's Encrypt) and passes requests,
+# WebSocket included, to the game server. setup.sh puts the domain in place of {DOMAIN}.
+{DOMAIN} {
+	encode gzip
+	reverse_proxy 127.0.0.1:3000
+}

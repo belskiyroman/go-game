@@ -2,7 +2,10 @@
 // and territory scoring with prisoners (Japanese-style counting, as on FlyOrDie).
 package rules
 
-import "errors"
+import (
+	"encoding/json"
+	"errors"
+)
 
 // Color of a point on the board.
 type Color int8
@@ -48,6 +51,26 @@ type Board struct {
 	Points []Color
 	// koPoint is the single point where the opponent may not immediately recapture, or -1.
 	koPoint int
+}
+
+// boardJSON is how a board is saved between server restarts (the ko point included).
+type boardJSON struct {
+	Size   int
+	Points []Color
+	Ko     int
+}
+
+func (b *Board) MarshalJSON() ([]byte, error) {
+	return json.Marshal(boardJSON{Size: b.Size, Points: b.Points, Ko: b.koPoint})
+}
+
+func (b *Board) UnmarshalJSON(data []byte) error {
+	var j boardJSON
+	if err := json.Unmarshal(data, &j); err != nil {
+		return err
+	}
+	b.Size, b.Points, b.koPoint = j.Size, j.Points, j.Ko
+	return nil
 }
 
 // NewBoard creates an empty board.

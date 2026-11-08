@@ -50,10 +50,15 @@ func (rs *ResultStore) Score(a, b string) (int, int) {
 }
 
 // ResultsPath puts the results next to the sessions file: sessions.json → results.json.
-func ResultsPath(sessionsPath string) string {
+func ResultsPath(sessionsPath string) string { return dataPath(sessionsPath, "results") }
+
+// GamesPath puts the saved games next to the sessions file: sessions.json → games.json.
+func GamesPath(sessionsPath string) string { return dataPath(sessionsPath, "games") }
+
+func dataPath(sessionsPath, name string) string {
 	dir, base := filepath.Split(sessionsPath)
 	if strings.Contains(base, "sessions") {
-		return filepath.Join(dir, strings.Replace(base, "sessions", "results", 1))
+		return filepath.Join(dir, strings.Replace(base, "sessions", name, 1))
 	}
-	return filepath.Join(dir, strings.TrimSuffix(base, filepath.Ext(base))+".results.json")
+	return filepath.Join(dir, strings.TrimSuffix(base, filepath.Ext(base))+"."+name+".json")
 }

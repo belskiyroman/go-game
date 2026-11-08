@@ -1,0 +1,74 @@
+# CI: every push and pull request builds the client and tests the server.
+# CD: a green build of main is deployed to the game server (deploy/deploy.sh over SSH).
+# Games survive the restart: the server saves them on stop and restores them on start.
+name: CI/CD
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Client — type check and build
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+      - name: Server — vet and test
+        working-directory: server
+        run: |
+          go vet ./...
+          go test ./...
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      # the only secret is the deploy key; the host and its fingerprint are public
+      # (deploy/known_hosts.txt), so the connection cannot be redirected to another server
+      - name: SSH key and known host
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/gogame_deploy
+          chmod 600 ~/.ssh/gogame_deploy
+          cat deploy/known_hosts.txt >> ~/.ssh/known_hosts
+      - name: Deploy
+        run: GOGAME_SSH_KEY="$HOME/.ssh/gogame_deploy" deploy/deploy.sh deploy@35.209.168.96

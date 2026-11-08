@@ -36,13 +36,22 @@ type Hub struct {
 	invites    map[string]*Invite // by inviter id
 	games      map[string]*Game
 	playerGame map[string]*Game // the game a player is in (also a finished one until they leave)
+
+	gamesPath  string // where games are saved between restarts ("" = not saved)
+	gamesDirty bool
 }
 
-func NewHub(sessions *SessionStore, results *ResultStore) *Hub {
-	return &Hub{
+func NewHub(sessions *SessionStore, results *ResultStore, gamesPath string) *Hub {
+	h := &Hub{
 		sessions: sessions, results: results, conns: map[string]map[*Conn]bool{}, settings: map[string]Settings{},
 		invites: map[string]*Invite{}, games: map[string]*Game{}, playerGame: map[string]*Game{},
+		gamesPath: gamesPath,
 	}
+	if gamesPath != "" {
+		h.loadGames()
+		go h.saveLoop()
+	}
+	return h
 }
 
 type inMsg struct {
@@ -211,6 +220,7 @@ func (h *Hub) handle(s *Session, m inMsg) {
 	case "leave":
 		if g := h.playerGame[s.ID]; g != nil && !g.Active() {
 			delete(h.playerGame, s.ID)
+			h.gamesDirty = true
 			h.sendTo(s.ID, map[string]any{"t": "noGame"})
 		}
 		h.broadcastLobby()
@@ -239,6 +249,7 @@ func (h *Hub) startGame(inv *Invite) {
 	}
 	h.playerGame[a.ID] = g
 	h.playerGame[b.ID] = g
+	h.gamesDirty = true
 	h.armTimer(g)
 	h.sendGame(g, a.ID)
 	h.sendGame(g, b.ID)
@@ -327,6 +338,7 @@ func (h *Hub) armTimer(g *Game) {
 }
 
 func (h *Hub) broadcastGame(g *Game, event map[string]any) {
+	h.gamesDirty = true
 	// a finished game counts once in the players' head-to-head score
 	if g.Result != nil && !g.Recorded {
 		g.Recorded = true
