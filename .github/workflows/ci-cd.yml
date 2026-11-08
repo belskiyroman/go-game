@@ -1,11 +1,22 @@
-# CI: every push and pull request builds the client and tests the server.
-# CD: a green build of main is deployed to the game server (deploy/deploy.sh over SSH).
+# CI: every push to a branch and every pull request builds the client and tests the server.
+# CD: a published GitHub release is deployed to the game server (deploy/deploy.sh over SSH).
+#     Merging into main does not deploy: changes are collected into releases.
+#     Rollback: run this workflow by hand with the tag of an earlier release
+#     (gh workflow run ci-cd.yml -f tag=v0.1.0).
 # Games survive the restart: the server saves them on stop and restores them on start.
 name: CI/CD
 
 on:
   push:
+    branches: ['**'] # not tags: a release tag is built and deployed by the release event
   pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to deploy (for example v0.1.0)
+        required: true
 
 permissions:
   contents: read
@@ -15,6 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
@@ -40,7 +53,7 @@ jobs:
 
   deploy:
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: production
     concurrency:
@@ -48,6 +61,8 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
