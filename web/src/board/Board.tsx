@@ -135,7 +135,10 @@ export function Board(props: { blurred: boolean; view?: BoardView | null; offer?
     layout(); drawGrid();
     if (app.game) renderer.update(shown(app.game), null);
     const off = onGameUpdate((g, e) => { renderer?.update(shown(g), props.view ? null : e); setSent(-1); drawUi(); });
-    onCleanup(() => { ro.disconnect(); off(); renderer?.destroy(); });
+    // Shift shows where the last move was: the glow wave runs again
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Shift' && !ev.repeat) renderer?.replaySignal(); };
+    window.addEventListener('keydown', onKey);
+    onCleanup(() => { ro.disconnect(); off(); window.removeEventListener('keydown', onKey); renderer?.destroy(); });
   });
 
   createEffect(() => { hover(); app.game?.phase; app.game?.seq; drawUi(); });

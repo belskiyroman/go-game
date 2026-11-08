@@ -36,7 +36,7 @@ export class BoardRenderer {
   private place: any;
   private capture: any;
   private signal: ReturnType<typeof createMoveSignal>;
-  private signals: Signal[] = []; // glow of the newest move and the last-move beams
+  private signals: Signal[] = []; // the glow wave of the newest move
   private canvas: HTMLCanvasElement;
   private size = 19;
   private margin = 0;
@@ -139,7 +139,6 @@ export class BoardRenderer {
     if (e && e.kind === 'move') {
       const idx = e.y * g.size + e.x;
       if (this.live) this.live.st.ext = t - this.live.placedAt;
-      for (const s of this.signals) if (s.endAt === undefined) s.endAt = t;
       this.signals.push({ idx, color: e.color === 'b' ? 0 : 1, start: t });
       const p = this.newStone(idx, e.color === 'b' ? 0 : 1, 1.3 + idx * 0.731 + g.moves * 0.173);
       p.placedAt = t;
@@ -150,6 +149,14 @@ export class BoardRenderer {
     }
     // anything out of sync (reconnect, missed message) is redrawn from the server's board
     if (!this.matches(g.board)) this.rebuild(g);
+  }
+
+  /** Runs the glow wave of the last move once more (Shift). */
+  replaySignal() {
+    const p = this.live;
+    if (!p) return;
+    this.signals = this.signals.filter((s) => s.idx !== p.idx);
+    this.signals.push({ idx: p.idx, color: p.color, start: now() });
   }
 
   private matches(board: string) {
@@ -179,10 +186,8 @@ export class BoardRenderer {
       const p = this.stones.get(g.last)!;
       delete p.st.ext; // the last stone keeps its live seal
       this.live = p;
-      this.signals = [{ idx: g.last, color: p.color, start: -1000 }]; // the beams only, no glow
-    } else {
-      this.signals = [];
     }
+    this.signals = [];
     this.staticDirty = true;
   }
 
@@ -270,7 +275,7 @@ export class BoardRenderer {
 
     gl.viewport(0, 0, W, H);
     gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
-    // under the stones: the glow of the newest move and the last-move beams
+    // under the stones: the glow wave of the newest move
     this.signals = this.signal.draw(this.signals, t, { w: this.cssW, h: this.cssH, size: this.size, margin: this.margin, cell: this.cell });
 
     // cached settled stones
