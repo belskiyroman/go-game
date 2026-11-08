@@ -33,6 +33,7 @@ export type GameState = {
   played: number; playedRunning: boolean; // game time without pauses, ms at serverNow
   h2h?: { b: number; w: number }; // head-to-head wins of the two players
   dead?: number[]; territory?: { b: number[]; w: number[] };
+  neutral?: number[]; // counting: empty points the players marked as no one's territory
   result?: { winner: Side; reason: 'score' | 'resign'; score?: Score; diff: number };
   sgf?: string;
   away: Side | '';               // this player went offline and ran out of time: the other one decides

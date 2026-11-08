@@ -92,6 +92,15 @@ export function Board(props: { blurred: boolean; view?: BoardView | null; offer?
           ctx.beginPath(); ctx.arc(x, y, tr, 0, Math.PI * 2); ctx.fill();
         }
       }
+      // points the players made neutral by hand: a small grey cross
+      const k = cell * 0.13;
+      ctx.strokeStyle = 'rgba(70, 60, 48, .7)';
+      ctx.lineWidth = Math.max(1.5, cell * 0.06);
+      ctx.lineCap = 'round';
+      for (const i of g.neutral ?? []) {
+        const [x, y] = at(i);
+        ctx.beginPath(); ctx.moveTo(x - k, y - k); ctx.lineTo(x + k, y + k); ctx.moveTo(x + k, y - k); ctx.lineTo(x - k, y + k); ctx.stroke();
+      }
     }
     const h = hover();
     if (h >= 0 && h !== sent() && canPlay() && g.board[h] === '.') {
@@ -102,6 +111,13 @@ export function Board(props: { blurred: boolean; view?: BoardView | null; offer?
       ctx.fillStyle = black ? 'rgba(12, 12, 14, .16)' : 'rgba(255, 255, 255, .24)';
       ctx.beginPath(); ctx.arc(x, y, cell * 0.45, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
+  };
+
+  // counting: a click on a stone marks its group dead or alive, a click on an empty point makes
+  // its area neutral or gives it back as counted
+  const canMark = () => {
+    const g = app.game;
+    return !!g && g.phase === 'scoring' && !!g.you;
   };
 
   const canPlay = () => {
@@ -145,7 +161,7 @@ export function Board(props: { blurred: boolean; view?: BoardView | null; offer?
   createEffect(() => { size(); if (renderer) drawGrid(); });
   createEffect(() => { const v = props.view; if (renderer && v && app.game) renderer.update(shown(app.game), null); });
 
-  const cursor = () => (canPlay() ? 'pointer' : 'default');
+  const cursor = () => (canPlay() || canMark() ? 'pointer' : 'default');
 
   return (
     <div ref={host} class="board-host">
@@ -175,6 +191,10 @@ export function Board(props: { blurred: boolean; view?: BoardView | null; offer?
             onClick={(ev) => {
               const i = pointToIndex(ev as unknown as PointerEvent);
               const g = app.game;
+              if (i >= 0 && g && canMark()) {
+                send({ t: g.board[i] === '.' ? 'toggleNeutral' : 'toggleDead', x: i % g.size, y: Math.floor(i / g.size) });
+                return;
+              }
               if (i < 0 || !g || !canPlay() || g.board[i] !== '.') return;
               send({ t: 'move', x: i % g.size, y: Math.floor(i / g.size) });
               // keep the hovered point: the cursor stays hidden over the stone that now appears there
