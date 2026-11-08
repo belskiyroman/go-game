@@ -110,7 +110,7 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 /* alternative games, requests, "My games" */
 .btn.on { border-color: var(--accent); color: var(--accent); }
 .count { margin-left: 8px; font-size: 12px; font-weight: 800; color: #1b1006; background: var(--accent); border-radius: 6px; padding: 1px 6px; }
-.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; white-space: nowrap; }
 .chip.ok { background: rgba(108, 196, 151, .15); color: var(--ok); }
 .chip.off { background: #2a2e32; color: #9a9ea3; }
 .chip.alt { background: rgba(240, 136, 62, .14); color: var(--accent); }
@@ -136,7 +136,7 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 .gcard.off .miniboard { opacity: .62; }
 .gcard .vs { font-weight: 800; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .gcard .meta { font-size: 13px; color: var(--muted); line-height: 1.6; }
-.gcard-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: auto; }
+.gcard-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-top: auto; }
 /* the board shows an offered start move: a blue frame until the game starts or the offer is gone */
 .frame.offer { background: linear-gradient(180deg, #16304f, #0f2440); }
 .frame.offer .coord { color: #9cc6f5; }
@@ -145,4 +145,4 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 .gamerow { display: flex; flex-direction: column; gap: 10px; }
 .gamerow-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .gamerow-cards { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 6px; }
-.gamerow-cards .gcard { flex: 0 0 250px; }
+.gamerow-cards .gcard { flex: 0 0 270px; }
