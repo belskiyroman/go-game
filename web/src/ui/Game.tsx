@@ -65,7 +65,7 @@ export function Game() {
   const resultSub = () => {
     const r = g().result!;
     if (r.reason === 'resign') return `Победа: соперник сдался`;
-    return `Победа на ${num(r.diff)} очка · счёт ${num(r.score!.b)} : ${num(r.score!.w)}`;
+    return `Победа на ${num(r.diff)} очка`; // the points of each side are in the table below
   };
   // a player as on the board: the stone and the nickname
   const Who = (p: { s: Side; size?: number }) => (
