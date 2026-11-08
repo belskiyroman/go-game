@@ -2,43 +2,64 @@ package rules
 
 import "math"
 
-// Territory finds empty regions surrounded by only one color, ignoring the dead stones
-// (their points count as empty). Returns the points owned by black and by white.
-func Territory(b *Board, dead map[int]bool) (black, white []int) {
-	occ := func(i int) Color {
-		if dead[i] {
+// Region is the empty area around point i, with the dead stones counted as empty, and its owner:
+// the only color that borders it, or Empty when both colors (or none) do. Returns nil for a live stone.
+func Region(b *Board, dead map[int]bool, i int) (points []int, owner Color) {
+	occ := func(p int) Color {
+		if dead[p] {
 			return Empty
 		}
-		return b.Points[i]
+		return b.Points[p]
 	}
-	seen := make([]bool, len(b.Points))
-	for i := range b.Points {
-		if seen[i] || occ(i) != Empty {
-			continue
-		}
-		region := []int{}
-		borders := map[Color]bool{}
-		stack := []int{i}
-		seen[i] = true
-		for len(stack) > 0 {
-			p := stack[len(stack)-1]
-			stack = stack[:len(stack)-1]
-			region = append(region, p)
-			for _, q := range b.Neighbors(p) {
-				c := occ(q)
-				if c != Empty {
-					borders[c] = true
-				} else if !seen[q] {
-					seen[q] = true
-					stack = append(stack, q)
-				}
+	if occ(i) != Empty {
+		return nil, Empty
+	}
+	borders := map[Color]bool{}
+	seen := map[int]bool{i: true}
+	stack := []int{i}
+	for len(stack) > 0 {
+		p := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		points = append(points, p)
+		for _, q := range b.Neighbors(p) {
+			if c := occ(q); c != Empty {
+				borders[c] = true
+			} else if !seen[q] {
+				seen[q] = true
+				stack = append(stack, q)
 			}
 		}
-		if len(borders) == 1 {
-			if borders[Black] {
-				black = append(black, region...)
-			} else {
-				white = append(white, region...)
+	}
+	if len(borders) == 1 {
+		for c := range borders {
+			owner = c
+		}
+	}
+	return points, owner
+}
+
+// Territory finds empty regions surrounded by only one color, ignoring the dead stones
+// (their points count as empty). Points the players marked neutral are no one's territory.
+// Returns the points owned by black and by white.
+func Territory(b *Board, dead, neutral map[int]bool) (black, white []int) {
+	seen := make([]bool, len(b.Points))
+	for i := range b.Points {
+		if seen[i] {
+			continue
+		}
+		region, owner := Region(b, dead, i)
+		for _, p := range region {
+			seen[p] = true
+		}
+		for _, p := range region {
+			if neutral[p] {
+				continue
+			}
+			switch owner {
+			case Black:
+				black = append(black, p)
+			case White:
+				white = append(white, p)
 			}
 		}
 	}
@@ -57,8 +78,8 @@ type Score struct {
 }
 
 // Count computes the score. capsB/capsW are stones captured during play by black/white.
-func Count(b *Board, dead map[int]bool, capsB, capsW int, komi float64) Score {
-	tb, tw := Territory(b, dead)
+func Count(b *Board, dead, neutral map[int]bool, capsB, capsW int, komi float64) Score {
+	tb, tw := Territory(b, dead, neutral)
 	deadB, deadW := 0, 0
 	for i := range dead {
 		switch b.Points[i] {

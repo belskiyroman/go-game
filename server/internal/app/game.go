@@ -78,8 +78,9 @@ type Game struct {
 	// stand still while the server restarts
 	ClockLeft time.Duration
 
-	Dead  map[int]bool
-	Agree [3]bool
+	Dead    map[int]bool // counting: stones marked dead (by the server, then by the players)
+	Neutral map[int]bool // counting: empty points the players marked as no one's territory
+	Agree   [3]bool
 
 	Result   *Result
 	Recorded bool // the result was counted in the head-to-head score
@@ -187,6 +188,7 @@ func (g *Game) Pass(c rules.Color, now time.Time) error {
 func (g *Game) startScoring(now time.Time) {
 	g.Phase = PhaseScoring
 	g.Dead = rules.EstimateDead(g.Board)
+	g.Neutral = nil
 	g.Agree = [3]bool{}
 	g.Deadline = now.Add(g.moveTime())
 }
@@ -203,6 +205,70 @@ func (g *Game) AgreeScore(c rules.Color) {
 	g.Seq++
 }
 
+// ToggleDead marks the group at x, y dead or alive again; the territory is recounted from it.
+// Any change asks both players to agree again and gives them a full move time to look.
+func (g *Game) ToggleDead(x, y int, now time.Time) error {
+	if g.Phase != PhaseScoring || x < 0 || y < 0 || x >= g.Board.Size || y >= g.Board.Size {
+		return fmt.Errorf("not counting")
+	}
+	i := g.Board.Index(x, y)
+	if g.Board.Points[i] == rules.Empty {
+		return fmt.Errorf("no stone")
+	}
+	if g.Dead == nil {
+		g.Dead = map[int]bool{}
+	}
+	stones, _ := g.Board.Group(i)
+	dead := !g.Dead[i]
+	for _, s := range stones {
+		if dead {
+			g.Dead[s] = true
+		} else {
+			delete(g.Dead, s)
+			delete(g.Neutral, s) // a live stone is not an empty point
+		}
+	}
+	g.scoreChanged(now)
+	return nil
+}
+
+// ToggleNeutral makes the empty area at x, y (dead stones count as empty) no one's territory, or
+// gives it back to the owner it was counted for. Nothing else is recounted.
+func (g *Game) ToggleNeutral(x, y int, now time.Time) error {
+	if g.Phase != PhaseScoring || x < 0 || y < 0 || x >= g.Board.Size || y >= g.Board.Size {
+		return fmt.Errorf("not counting")
+	}
+	region, owner := rules.Region(g.Board, g.Dead, g.Board.Index(x, y))
+	if len(region) == 0 {
+		return fmt.Errorf("not an empty point")
+	}
+	if g.Neutral == nil {
+		g.Neutral = map[int]bool{}
+	}
+	all := true
+	for _, p := range region {
+		all = all && g.Neutral[p]
+	}
+	if !all && owner == rules.Empty {
+		return fmt.Errorf("already neutral")
+	}
+	for _, p := range region {
+		if all {
+			delete(g.Neutral, p)
+		} else {
+			g.Neutral[p] = true
+		}
+	}
+	g.scoreChanged(now)
+	return nil
+}
+
+func (g *Game) scoreChanged(now time.Time) {
+	g.Agree = [3]bool{}
+	g.Deadline = now.Add(g.moveTime())
+	g.Seq++
+}
+
 // PlayOn: the game continues from where it stopped.
 func (g *Game) PlayOn(now time.Time) {
 	if g.Phase != PhaseScoring {
@@ -210,14 +276,14 @@ func (g *Game) PlayOn(now time.Time) {
 	}
 	g.Phase = PhasePlay
 	g.Passes = 0
-	g.Dead = nil
+	g.Dead, g.Neutral = nil, nil
 	g.Agree = [3]bool{}
 	g.Deadline = now.Add(g.moveTime())
 	g.Seq++
 }
 
 func (g *Game) finishByScore() {
-	s := rules.Count(g.Board, g.Dead, g.Caps[rules.Black], g.Caps[rules.White], g.Settings.Komi)
+	s := rules.Count(g.Board, g.Dead, g.Neutral, g.Caps[rules.Black], g.Caps[rules.White], g.Settings.Komi)
 	w := "b"
 	if s.White > s.Black {
 		w = "w"

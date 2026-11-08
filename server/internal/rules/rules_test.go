@@ -101,7 +101,7 @@ func TestCountTerritoryAndDead(t *testing.T) {
 	play(t, b, White, 1, 3) // dead white stone in black's area
 	play(t, b, Black, 7, 6) // dead black stone in white's area
 	dead := map[int]bool{b.Index(1, 3): true, b.Index(7, 6): true}
-	s := Count(b, dead, 3, 2, 6.5)
+	s := Count(b, dead, nil, 3, 2, 6.5)
 	if s.BlackTerritory != 27 || s.WhiteTerritory != 31 {
 		t.Fatalf("territory b=%d w=%d", s.BlackTerritory, s.WhiteTerritory)
 	}

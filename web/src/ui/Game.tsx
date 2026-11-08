@@ -215,7 +215,7 @@ export function Game() {
           <Show when={g().phase === 'scoring'}>
             <div class="banner">
               <strong style={{ 'font-size': '17px' }}>Подсчёт очков</strong>
-              <span style={{ color: '#c9c3ba', 'font-size': '14px', 'line-height': 1.5 }}>Сервер отметил мёртвые камни (притушены) и территорию (кружки). Пустые пункты без отметки нейтральные. Очки покажем, когда согласятся оба.</span>
+              <span style={{ color: '#c9c3ba', 'font-size': '14px', 'line-height': 1.5 }}>Сервер отметил мёртвые камни (притушены) и территорию (кружки). Нажмите на камень, чтобы отметить его группу мёртвой или живой, — территория пересчитается. Нажмите на пустой пункт, чтобы сделать его область нейтральной (крестики) или вернуть как посчитано. После любого изменения оба подтверждают заново. Очки покажем, когда согласятся оба.</span>
               <div class="grid2">
                 <button class="btn primary" disabled={g().agree[me()]} onClick={() => send({ t: 'scoreAgree' })}>{g().agree[me()] ? 'Вы согласны' : 'Согласен'}</button>
                 <button class="btn" onClick={() => send({ t: 'playOn' })}>Доиграть</button>

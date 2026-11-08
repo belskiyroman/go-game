@@ -537,6 +537,14 @@ func (h *Hub) handleGame(s *Session, m inMsg, now time.Time) {
 		g.AgreeScore(c)
 	case "playOn":
 		g.PlayOn(now)
+	case "toggleDead":
+		if g.ToggleDead(m.X, m.Y, now) != nil {
+			return
+		}
+	case "toggleNeutral":
+		if g.ToggleNeutral(m.X, m.Y, now) != nil {
+			return
+		}
 
 	case "ask":
 		oppID := g.Players[c.Opponent()]
@@ -724,8 +732,14 @@ func (h *Hub) sendGame(g *Game, sessionID string, event ...map[string]any) {
 			dead = append(dead, i)
 		}
 		sort.Ints(dead)
-		tb, tw := rules.Territory(g.Board, g.Dead)
+		tb, tw := rules.Territory(g.Board, g.Dead, g.Neutral)
+		neutral := []int{}
+		for i := range g.Neutral {
+			neutral = append(neutral, i)
+		}
+		sort.Ints(neutral)
 		st["dead"] = dead
+		st["neutral"] = neutral
 		st["territory"] = map[string][]int{"b": nonNil(tb), "w": nonNil(tw)}
 	}
 	if g.Result != nil {
