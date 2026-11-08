@@ -307,9 +307,6 @@ export function Game() {
                 <span class="label">Партия окончена</span>
                 <div style={{ 'font-family': "'Unbounded', 'Manrope', sans-serif", 'font-size': '22px', 'font-weight': 700, 'margin-top': '6px' }}><Who s={g().result!.winner} size={30} /></div>
                 <div class="muted" style={{ 'margin-top': '4px' }}>{resultSub()}</div>
-                <div class="h2h-line" style={{ 'margin-top': '10px' }}>
-                  Счёт встреч: <span class="mini b" aria-hidden="true">火</span><strong>{g().h2h?.b ?? 0}</strong> : <strong>{g().h2h?.w ?? 0}</strong><span class="mini w" aria-hidden="true">冰</span>
-                </div>
               </div>
               <Show when={g().result!.score}>
                 {(sc) => (
