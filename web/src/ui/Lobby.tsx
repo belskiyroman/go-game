@@ -1,5 +1,5 @@
 import { For, Show } from 'solid-js';
-import { app, setApp, komiLabel, timeLabel, type Settings, h2hLine } from '../store';
+import { app, setApp, komiLabel, timeLabel, type Settings } from '../store';
 import { send } from '../net';
 
 const SIZES = [9, 13, 15, 19];
@@ -14,12 +14,15 @@ export function Topbar(props: { info?: string }) {
         Го онлайн
         <span class="muted" style={{ 'font-family': 'Manrope', 'font-weight': 500, 'font-size': '15px', 'margin-left': '8px' }}>{props.info ?? 'Комната без рейтинга'}</span>
       </div>
-      <Show when={!props.info}>
-        <div style={{ display: 'flex', 'align-items': 'center', gap: '12px' }}>
-          <span class="muted" style={{ 'font-size': '15px' }}>Вы: <strong style={{ color: 'var(--text)' }}>{app.me?.nick}</strong></span>
-          <button class="btn ghost small" onClick={() => setApp('renaming', true)}>Сменить ник</button>
-        </div>
-      </Show>
+      <nav style={{ display: 'flex', 'align-items': 'center', gap: '10px' }} aria-label="Разделы">
+        <span class="muted" style={{ 'font-size': '15px', 'margin-right': '4px' }}>Вы: <strong style={{ color: 'var(--text)' }}>{app.me?.nick}</strong></span>
+        <Show when={app.view === 'games'}>
+          <button class="btn small" onClick={() => setApp('view', 'main')}>{app.game ? 'К партии' : 'Комната'}</button>
+        </Show>
+        <button class="btn small" classList={{ on: app.view === 'games' }} aria-pressed={app.view === 'games'} onClick={() => setApp('view', 'games')}>
+          Мои партии<Show when={(app.lobby?.games.length ?? 0) > 0}><span class="count">{app.lobby!.games.length}</span></Show>
+        </button>
+      </nav>
     </header>
   );
 }
@@ -94,30 +97,6 @@ export function Lobby() {
         </section>
       </main>
 
-      <Show when={outgoing()}>
-        {(o) => (
-          <div class="modal-back" role="dialog" aria-modal="true" aria-labelledby="out-title">
-            <div class="card modal">
-              <div>
-                <span class="label">Приглашение отправлено</span>
-                <h2 id="out-title" style={{ 'font-size': '22px', 'margin-top': '6px' }}>Ждём ответа от {o().nick}</h2>
-              </div>
-              <div style={{ display: 'flex', 'align-items': 'center', gap: '12px', color: '#c9c3ba' }}>
-                <div class="spinner" /><span>Игрок ещё не принял и не отклонил приглашение</span>
-              </div>
-              <div class="h2h-line">{h2hLine(o().h2h)}</div>
-              <dl class="params">
-                <div><dt class="label">Доска</dt><dd>{o().settings.size}×{o().settings.size}</dd></div>
-                <div><dt class="label">Коми</dt><dd>{komiLabel(o().settings.komi)}</dd></div>
-                <div><dt class="label">Время на ход</dt><dd>{timeLabel(o().settings.moveTime)}</dd></div>
-                <div><dt class="label">Ваш цвет</dt><dd>Случайно</dd></div>
-              </dl>
-              <p class="muted" style={{ margin: 0, 'font-size': '14px', 'line-height': 1.5 }}>Пока приглашение активно, настройки менять нельзя. Чтобы изменить их или пригласить другого игрока, отмените это приглашение.</p>
-              <button class="btn" onClick={() => send({ t: 'cancelInvite' })}>Отменить приглашение</button>
-            </div>
-          </div>
-        )}
-      </Show>
     </div>
   );
 }

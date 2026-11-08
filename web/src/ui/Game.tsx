@@ -1,8 +1,10 @@
-import { createSignal, For, onCleanup, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from 'solid-js';
 import { app, komiLabel, onGameUpdate, serverNow, timeLabel, type Side } from '../store';
 import { send } from '../net';
-import { Board } from '../board/Board';
+import { Board, type BoardView } from '../board/Board';
+import { replay } from '../replay';
 import { Topbar } from './Lobby';
+import { movesWord } from './MiniBoard';
 
 const fmt = (ms: number) => {
   const s = Math.max(0, Math.ceil(ms / 1000));
@@ -32,6 +34,17 @@ export function Game() {
     passTimer = window.setTimeout(() => setPassNote(null), 2000);
   });
   onCleanup(() => { offPass(); clearTimeout(passTimer); });
+
+  // "Игра началась": both players see it for 2 s when an alternative game starts
+  const [startNote, setStartNote] = createSignal(false);
+  let startTimer: number | undefined;
+  const offStart = onGameUpdate((_, e) => {
+    if (e?.kind !== 'started') return;
+    setStartNote(true);
+    clearTimeout(startTimer);
+    startTimer = window.setTimeout(() => setStartNote(false), 2000);
+  });
+  onCleanup(() => { offStart(); clearTimeout(startTimer); });
 
   const g = () => app.game!;
   const me = () => g().you as Side;
@@ -69,6 +82,31 @@ export function Game() {
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
+  // --- an alternative game before its start: each player picks the start move on their own slider
+  const src = () => g().source ?? [];
+  const [pick, setPick] = createSignal<number | null>(null); // null: the last move
+  const [swap, setSwap] = createSignal(false);
+  createEffect(on(() => g().id, () => { setPick(null); setSwap(false); }));
+  const proposal = () => (g().phase === 'setup' ? g().proposal ?? null : null);
+  const mine = () => proposal()?.from === me();
+  const theirs = () => !!proposal() && proposal()!.from !== me();
+  const myStep = () => Math.min(pick() ?? src().length, src().length);
+  const shownStep = () => proposal()?.step ?? myStep(); // an offer (own or the opponent's) is shown at once
+  const turnAfter = (n: number): Side => (n === 0 ? 'b' : src()[n - 1][0] === 1 ? 'w' : 'b');
+  const stepLine = (n: number) => `${n === 0 ? 'Начало партии' : `Ход ${n} из ${src().length}`} · ходят ${turnAfter(n) === 'b' ? 'чёрные' : 'белые'}`;
+  const view = createMemo<BoardView | null>(() => {
+    if (g().phase !== 'setup') return null;
+    const n = shownStep();
+    return { ...replay(g().size, src(), n), key: `setup-${n}` };
+  });
+  const stoneOf = (s: Side) => (s === 'b' ? 'чёрные 火' : 'белые 冰');
+
+  // requests to the opponent
+  const REQ_MINE = { alt: 'Вы предложили альтернативный розыгрыш', adjourn: 'Вы предложили отложить партию', close: 'Вы предложили закрыть партию без подсчёта' };
+  const myReq = () => (g().req && g().req!.from === me() ? g().req! : null);
+  const theirReq = () => (g().req && g().req!.from !== me() ? g().req! : null);
+  const ongoing = () => ['play', 'paused', 'scoring', 'setup'].includes(g().phase);
+
   const rematchPending = () => app.lobby?.outgoing && (app.lobby.outgoing.to === g().black.id || app.lobby.outgoing.to === g().white.id);
 
   return (
@@ -76,7 +114,10 @@ export function Game() {
       <Topbar info={`${g().size}×${g().size} · коми ${komiLabel(g().komi)} · ${timeLabel(g().moveTime)} на ход`} />
       <main class="game">
         <div class="board-col">
-          <Board blurred={g().phase === 'paused'} />
+          <Board blurred={g().phase === 'paused'} view={view()} />
+          <Show when={startNote()}>
+            <div class="pass-note" role="status">Игра началась</div>
+          </Show>
           <Show when={passNote()}>
             {(n) => (
               <div class="pass-note" role="status">
@@ -94,6 +135,9 @@ export function Game() {
         </div>
 
         <aside class="side">
+          <Show when={g().parent && g().phase !== 'setup'}>
+            <div class="altline"><span class="chip alt">Альтернативный розыгрыш</span><span class="muted">с хода {g().from}</span></div>
+          </Show>
           <div class="gameclock" aria-label="Время партии без пауз">
             <span class="muted">Время партии</span>
             <strong>{fmtLong(played())}</strong>
@@ -161,13 +205,76 @@ export function Game() {
           <Show when={g().phase === 'scoring'}>
             <div class="banner">
               <strong style={{ 'font-size': '17px' }}>Подсчёт очков</strong>
-              <span style={{ color: '#c9c3ba', 'font-size': '14px', 'line-height': 1.5 }}>Сервер отметил мёртвые камни (притушены) и территорию (квадраты). Пустые пункты без отметки нейтральные. Очки покажем, когда согласятся оба.</span>
+              <span style={{ color: '#c9c3ba', 'font-size': '14px', 'line-height': 1.5 }}>Сервер отметил мёртвые камни (притушены) и территорию (кружки). Пустые пункты без отметки нейтральные. Очки покажем, когда согласятся оба.</span>
               <div class="grid2">
                 <button class="btn primary" disabled={g().agree[me()]} onClick={() => send({ t: 'scoreAgree' })}>{g().agree[me()] ? 'Вы согласны' : 'Согласен'}</button>
                 <button class="btn" onClick={() => send({ t: 'playOn' })}>Доиграть</button>
               </div>
               <span class="muted" style={{ 'font-size': '14px' }}>{g().agree[opp()] ? `${nickOf(opp())} согласен` : `${nickOf(opp())} ещё не выбрал`} · осталось {fmt(g().deadline - now())}</span>
             </div>
+          </Show>
+
+          <Show when={g().phase === 'setup'}>
+            <Show
+              when={theirs()}
+              fallback={
+                <div class="box">
+                  <div class="altline"><span class="chip alt">Альтернативный розыгрыш</span><span class="muted">от партии из {movesWord(src().length)}</span></div>
+                  <div class="between"><span class="label">Точка старта</span><strong class="stepline">{stepLine(shownStep())}</strong></div>
+                  <input class="slider" type="range" min="0" max={src().length} value={shownStep()} disabled={mine()} aria-label="Ход, с которого начать" onInput={(e) => setPick(Number(e.currentTarget.value))} />
+                  <div class="grid3">
+                    <button class="btn small" disabled={mine() || myStep() === 0} onClick={() => setPick(myStep() - 1)}>◀ Ход</button>
+                    <button class="btn small" disabled={mine() || myStep() >= src().length} onClick={() => setPick(myStep() + 1)}>Ход ▶</button>
+                    <button class="btn small" disabled={mine() || myStep() === src().length} onClick={() => setPick(null)}>Последний</button>
+                  </div>
+                  <label class="check"><input type="checkbox" checked={mine() ? proposal()!.swap : swap()} disabled={mine()} onChange={(e) => setSwap(e.currentTarget.checked)} /> Предложить поменяться цветами</label>
+                  <Show
+                    when={mine()}
+                    fallback={<button class="btn primary" onClick={() => send({ t: 'propose', step: myStep(), swap: swap() })}>{myStep() === 0 ? 'Предложить начать с начала' : `Предложить начать с хода ${myStep()}`}</button>}
+                  >
+                    <div class="waiting"><div class="spinner" />Ждём ответа {nickOf(opp())}…</div>
+                    <button class="btn" onClick={() => send({ t: 'proposeCancel' })}>Отозвать предложение</button>
+                  </Show>
+                </div>
+              }
+            >
+              <div class="box proposal">
+                <span class="label">Предложение соперника</span>
+                <strong style={{ 'font-size': '17px' }}>{stepLine(proposal()!.step)}</strong>
+                <span class="note">
+                  {nickOf(opp())} предлагает начать отсюда{proposal()!.swap ? ' и поменяться цветами' : ''}: вы — {stoneOf(proposal()!.swap ? opp() : me())}, {nickOf(opp())} — {stoneOf(proposal()!.swap ? me() : opp())}.
+                </span>
+                <div class="grid2">
+                  <button class="btn primary" onClick={() => send({ t: 'proposeAnswer', accept: true })}>Принять</button>
+                  <button class="btn" onClick={() => send({ t: 'proposeAnswer', accept: false })}>Отказаться</button>
+                </div>
+              </div>
+            </Show>
+          </Show>
+
+          <Show when={ongoing()}>
+            <Show
+              when={myReq()}
+              fallback={
+                <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
+                  <Show when={g().phase !== 'setup' && g().moves > 0}>
+                    <button class="btn small" disabled={!!g().req} onClick={() => send({ t: 'ask', kind: 'alt' })}>Альтернативный розыгрыш</button>
+                  </Show>
+                  <div class="grid2">
+                    <button class="btn small" disabled={!!g().req} onClick={() => send({ t: 'ask', kind: 'adjourn' })}>Отложить</button>
+                    <button class="btn small" disabled={!!g().req} onClick={() => send({ t: 'ask', kind: 'close' })}>Закрыть</button>
+                  </div>
+                </div>
+              }
+            >
+              {(r) => (
+                <div class="banner">
+                  <div style={{ display: 'flex', 'align-items': 'center', gap: '10px' }}><div class="spinner" /><strong>{REQ_MINE[r().kind]}</strong></div>
+                  <span style={{ color: '#c9c3ba', 'font-size': '14px' }}>Ждём ответа {nickOf(opp())}.</span>
+                  <button class="btn" onClick={() => send({ t: 'askCancel' })}>Отозвать предложение</button>
+                </div>
+              )}
+            </Show>
           </Show>
 
           <Show when={g().phase === 'result' && g().result}>
@@ -199,11 +306,68 @@ export function Game() {
                 <button class="btn" onClick={downloadSgf}>Скачать SGF</button>
               </div>
               <Show when={rematchPending()}><button class="btn ghost small" onClick={() => send({ t: 'cancelInvite' })}>Отменить реванш</button></Show>
+              <Show when={g().moves > 0}>
+                <Show when={myReq()} fallback={<button class="btn small" disabled={!!g().req} onClick={() => send({ t: 'ask', kind: 'alt' })}>Альтернативный розыгрыш</button>}>
+                  <button class="btn small" onClick={() => send({ t: 'askCancel' })}>Ждём ответа на розыгрыш · отозвать</button>
+                </Show>
+              </Show>
               <button class="btn ghost" onClick={() => send({ t: 'leave' })}>В комнату</button>
             </div>
           </Show>
         </aside>
       </main>
+
+      <Show when={theirReq()}>
+        {(r) => (
+          <div class="modal-back" role="alertdialog" aria-modal="true" aria-labelledby="rq-title">
+            <div class="card modal">
+              <div>
+                <span class="label">{r().kind === 'alt' ? 'Альтернативный розыгрыш' : r().kind === 'adjourn' ? 'Отложить партию' : 'Закрыть партию'}</span>
+                <h2 id="rq-title" style={{ 'font-size': '22px', 'margin-top': '6px' }}>
+                  {nickOf(opp())} предлагает {r().kind === 'alt' ? 'альтернативный розыгрыш' : r().kind === 'adjourn' ? 'отложить партию' : 'закрыть партию без подсчёта'}
+                </h2>
+              </div>
+              <ul class="reqlist">
+                <Show when={r().kind === 'alt'}>
+                  <li>{g().phase === 'result' ? 'Результат этой партии не изменится.' : 'Эта партия будет отложена: камни остаются, часы стоят.'}</li>
+                  <li>Вы оба перейдёте в её копию и выберете ход, с которого начать.</li>
+                  <Show when={g().phase !== 'result'}><li>Вернуться к ней можно через «Мои партии».</li></Show>
+                </Show>
+                <Show when={r().kind === 'adjourn'}>
+                  <li>Часы остановятся, вы оба вернётесь в комнату.</li>
+                  <li>Продолжить партию можно из «Моих партий», когда оба будете в сети.</li>
+                </Show>
+                <Show when={r().kind === 'close'}>
+                  <li>Партия закончится без подсчёта и без победителя.</li>
+                  <li>В счёт встреч она не пойдёт.</li>
+                </Show>
+              </ul>
+              <div class="grid2">
+                <button class="btn primary" onClick={() => send({ t: 'askAnswer', accept: true })}>Принять</button>
+                <button class="btn" onClick={() => send({ t: 'askAnswer', accept: false })}>Отказаться</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Show>
+
+      <Show when={g().away && g().away === opp()}>
+        <div class="modal-back" role="alertdialog" aria-modal="true" aria-labelledby="away-title">
+          <div class="card modal">
+            <div>
+              <span class="label">Соперник не в сети</span>
+              <h2 id="away-title" style={{ 'font-size': '22px', 'margin-top': '6px' }}>{nickOf(opp())} отключился, и его время на ход вышло</h2>
+            </div>
+            <p class="muted" style={{ margin: 0, 'font-size': '14px', 'line-height': 1.5 }}>
+              Подсчёт — партия закончится по позиции сейчас (мёртвые камни определит сервер) и пойдёт в счёт встреч. Отложить — партия заморозится и останется в «Моих партиях». Если соперник вернётся раньше, игра продолжится.
+            </p>
+            <div class="grid2">
+              <button class="btn primary" onClick={() => send({ t: 'awayScore' })}>Подсчитать очки</button>
+              <button class="btn" onClick={() => send({ t: 'awayAdjourn' })}>Отложить</button>
+            </div>
+          </div>
+        </div>
+      </Show>
 
       <Show when={g().phase === 'play' && g().pauseReq && g().pauseReq !== me()}>
         <div class="modal-back" role="alertdialog" aria-modal="true" aria-labelledby="pr-title">

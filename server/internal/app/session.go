@@ -139,6 +139,18 @@ func (st *SessionStore) ByID(id string) *Session {
 	return st.byID[id]
 }
 
+// ByNick finds the live player with this nickname (case does not matter), or nil.
+func (st *SessionStore) ByNick(nick string) *Session {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for _, s := range st.byID {
+		if strings.EqualFold(s.Nick, nick) && time.Since(s.LastSeen) < SessionTTL {
+			return s
+		}
+	}
+	return nil
+}
+
 // loop expires old sessions and writes the file when something changed.
 func (st *SessionStore) loop() {
 	for range time.Tick(15 * time.Second) {

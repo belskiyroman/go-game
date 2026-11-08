@@ -17,7 +17,8 @@ type gamesFile struct {
 	Players map[string]string // player ID → game ID (finished games stay until the player leaves)
 }
 
-// SaveGames writes the games that players are in. Safe to call at any time.
+// SaveGames writes the games being played, the adjourned ones (kept until they are finished or
+// closed) and the finished ones a player still looks at. Safe to call at any time.
 func (h *Hub) SaveGames() {
 	if h.gamesPath == "" {
 		return
@@ -25,13 +26,15 @@ func (h *Hub) SaveGames() {
 	h.mu.Lock()
 	now := time.Now()
 	f := gamesFile{Players: map[string]string{}}
-	saved := map[*Game]bool{}
+	open := map[*Game]bool{}
 	for pid, g := range h.playerGame {
 		f.Players[pid] = g.ID
-		if saved[g] {
-			continue
+		open[g] = true
+	}
+	for _, g := range h.games {
+		if !g.Active() && g.Phase != PhaseAdjourned && !open[g] {
+			continue // finished and nobody looks at it
 		}
-		saved[g] = true
 		c := *g // a copy with the clocks as of now
 		c.Played = g.PlayedTime(now)
 		if !g.Running.IsZero() {
