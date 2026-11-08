@@ -17,7 +17,8 @@ func main() {
 	flag.Parse()
 
 	sessions := app.NewSessionStore(*data)
-	srv := &app.Server{Sessions: sessions, Hub: app.NewHub(sessions), WebDir: *web}
+	results := app.NewResultStore(app.ResultsPath(*data))
+	srv := &app.Server{Sessions: sessions, Hub: app.NewHub(sessions, results), WebDir: *web}
 	hs := &http.Server{Addr: *addr, Handler: srv.Routes(), ReadHeaderTimeout: 10 * time.Second}
 	log.Printf("listening on %s, serving %s", *addr, *web)
 	log.Fatal(hs.ListenAndServe())

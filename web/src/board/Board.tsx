@@ -1,5 +1,5 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
-import { app, onGameUpdate, serverNow } from '../store';
+import { app, onGameUpdate } from '../store';
 import { send } from '../net';
 import { BoardRenderer } from './renderer';
 
@@ -21,6 +21,7 @@ export function Board(props: { blurred: boolean }) {
   let renderer: BoardRenderer | null = null;
   const [px, setPx] = createSignal(600); // wooden area size, CSS px
   const [hover, setHover] = createSignal(-1);
+  const [sent, setSent] = createSignal(-1); // the point of a move sent to the server, until it answers
   const [error, setError] = createSignal('');
   const size = () => app.game?.size ?? 19;
   const geom = () => {
@@ -45,7 +46,7 @@ export function Board(props: { blurred: boolean }) {
     ctx.clearRect(0, 0, s, s);
     ctx.strokeStyle = 'rgba(58, 40, 18, .85)';
     for (let i = 0; i < n; i++) {
-      const w = i === 0 || i === n - 1 ? 2 : 1;
+      const w = i === 0 || i === n - 1 ? 2.5 : 1.5;
       ctx.lineWidth = w;
       const o = margin + i * cell;
       ctx.beginPath(); ctx.moveTo(margin, o); ctx.lineTo(margin + (n - 1) * cell, o); ctx.stroke();
@@ -53,7 +54,7 @@ export function Board(props: { blurred: boolean }) {
     }
     ctx.fillStyle = 'rgba(58, 40, 18, .9)';
     for (const [x, y] of HOSHI[n] ?? []) {
-      ctx.beginPath(); ctx.arc(margin + x * cell, margin + y * cell, Math.max(2.5, cell * 0.1), 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(margin + x * cell, margin + y * cell, Math.max(2.5, cell * 0.1) + 0.3, 0, Math.PI * 2); ctx.fill();
     }
     renderer?.resize(s, s, dpr, n, margin, cell);
   };
@@ -74,17 +75,18 @@ export function Board(props: { blurred: boolean }) {
         ctx.fillStyle = 'rgba(214, 170, 104, .62)';
         ctx.beginPath(); ctx.arc(x, y, cell * 0.47, 0, Math.PI * 2); ctx.fill();
       }
-      const sq = cell * 0.32;
-      for (const [side, fill, line] of [['b', '#111214', 'rgba(255,255,255,.18)'], ['w', '#f7f4ee', 'rgba(0,0,0,.35)']] as const) {
+      // territory: small translucent discs in the colour of the owner's stones (coal / marble)
+      const tr = cell * 0.24;
+      for (const [side, fill] of [['b', 'rgba(20, 20, 23, .55)'], ['w', 'rgba(242, 240, 234, .72)']] as const) {
+        ctx.fillStyle = fill;
         for (const i of g.territory?.[side] ?? []) {
           const [x, y] = at(i);
-          ctx.fillStyle = fill; ctx.fillRect(x - sq / 2, y - sq / 2, sq, sq);
-          ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.strokeRect(x - sq / 2, y - sq / 2, sq, sq);
+          ctx.beginPath(); ctx.arc(x, y, tr, 0, Math.PI * 2); ctx.fill();
         }
       }
     }
     const h = hover();
-    if (h >= 0 && canPlay() && g.board[h] === '.') {
+    if (h >= 0 && h !== sent() && canPlay() && g.board[h] === '.') {
       const [x, y] = at(h);
       const black = g.you === 'b';
       ctx.lineWidth = 2;
@@ -94,11 +96,9 @@ export function Board(props: { blurred: boolean }) {
     }
   };
 
-  const [tick, setTick] = createSignal(0);
   const canPlay = () => {
-    tick();
     const g = app.game;
-    return !!g && g.phase === 'play' && g.you === g.turn && serverNow() >= g.inputOpenAt && !g.pauseReq;
+    return !!g && g.phase === 'play' && g.you === g.turn && !g.pauseReq;
   };
 
   const pointToIndex = (ev: PointerEvent) => {
@@ -126,20 +126,14 @@ export function Board(props: { blurred: boolean }) {
     ro.observe(host);
     layout(); drawGrid();
     if (app.game) renderer.update(app.game, null);
-    const off = onGameUpdate((g, e) => { renderer?.update(g, e); drawUi(); });
-    const iv = setInterval(() => setTick((v) => v + 1), 250);
-    onCleanup(() => { ro.disconnect(); off(); clearInterval(iv); renderer?.destroy(); });
+    const off = onGameUpdate((g, e) => { renderer?.update(g, e); setSent(-1); drawUi(); });
+    onCleanup(() => { ro.disconnect(); off(); renderer?.destroy(); });
   });
 
-  createEffect(() => { tick(); hover(); app.game?.phase; app.game?.seq; drawUi(); });
+  createEffect(() => { hover(); app.game?.phase; app.game?.seq; drawUi(); });
   createEffect(() => { size(); if (renderer) drawGrid(); });
 
-  const cursor = () => {
-    tick();
-    const h = hover();
-    if (h >= 0 && renderer?.isAppearing(h)) return 'none';
-    return canPlay() ? 'pointer' : 'default';
-  };
+  const cursor = () => (canPlay() ? 'pointer' : 'default');
 
   return (
     <div ref={host} class="board-host">
@@ -171,7 +165,9 @@ export function Board(props: { blurred: boolean }) {
               const g = app.game;
               if (i < 0 || !g || !canPlay() || g.board[i] !== '.') return;
               send({ t: 'move', x: i % g.size, y: Math.floor(i / g.size) });
-              setHover(-1);
+              // keep the hovered point: the cursor stays hidden over the stone that now appears there
+              setSent(i);
+              setTimeout(() => setSent((s) => (s === i ? -1 : s)), 1500); // a refused move frees the point
             }}
           />
         </div>

@@ -9,17 +9,6 @@ import (
 	"gogame/internal/rules"
 )
 
-// Animation time the clients need after a move, before the next move is accepted and the
-// per-move clock starts. Mirrors the client's placement and capture animations: the game is
-// meant to be slow, and the time spent watching must not eat into a player's clock.
-const (
-	placeAnim      = 3300 * time.Millisecond
-	captureStart   = 2000 * time.Millisecond // capture chain starts when the new stone separates
-	captureLayer   = 300 * time.Millisecond
-	captureStone   = 2400 * time.Millisecond
-	inputTolerance = 300 * time.Millisecond
-)
-
 type Settings struct {
 	Size     int     `json:"size"`
 	Komi     float64 `json:"komi"`
@@ -76,15 +65,19 @@ type Game struct {
 	PauseReq rules.Color // who asked for a pause and waits for an answer, or Empty
 	Ready    [3]bool     // during a pause: "ready to continue"
 
-	Deadline    time.Time     // when the current player's per-move time runs out
-	Remaining   time.Duration // frozen time while paused
-	InputOpenAt time.Time     // moves before this are refused: animations are still running
+	Deadline  time.Time     // when the current player's per-move time runs out
+	Remaining time.Duration // frozen time while paused
+
+	// game clock: total playing time without pauses
+	Played  time.Duration // accumulated while the clock was stopped
+	Running time.Time     // when the clock last started; zero while stopped
 
 	Dead  map[int]bool
 	Agree [3]bool
 
-	Result *Result
-	Seq    int // increases with every change; clients use it to order events
+	Result   *Result
+	Recorded bool // the result was counted in the head-to-head score
+	Seq      int  // increases with every change; clients use it to order events
 
 	timer *time.Timer
 }
@@ -98,9 +91,22 @@ func NewGame(s Settings, black, white *Session) *Game {
 	g.Nicks[rules.Black], g.Nicks[rules.White] = black.Nick, white.Nick
 	g.Tags[rules.Black], g.Tags[rules.White] = black.Tag(), white.Tag()
 	now := time.Now()
-	g.InputOpenAt = now
 	g.Deadline = now.Add(g.moveTime())
+	g.Running = now
 	return g
+}
+
+// PlayedTime is the game time so far, pauses not included.
+func (g *Game) PlayedTime(now time.Time) time.Duration {
+	if g.Running.IsZero() {
+		return g.Played
+	}
+	return g.Played + now.Sub(g.Running)
+}
+
+func (g *Game) stopClock(now time.Time) {
+	g.Played = g.PlayedTime(now)
+	g.Running = time.Time{}
 }
 
 func (g *Game) moveTime() time.Duration { return time.Duration(g.Settings.MoveTime) * time.Second }
@@ -118,42 +124,6 @@ func (g *Game) ColorOf(sessionID string) rules.Color {
 
 func (g *Game) Active() bool { return g.Phase != PhaseResult }
 
-// captureLayers: how many links the capture chain has (BFS distance from the capturing move).
-func captureLayers(b *rules.Board, move int, captured []int) int {
-	if len(captured) == 0 {
-		return 0
-	}
-	in := map[int]bool{}
-	for _, c := range captured {
-		in[c] = true
-	}
-	depth := map[int]int{}
-	queue := []int{}
-	for _, q := range b.Neighbors(move) {
-		if in[q] {
-			depth[q] = 0
-			queue = append(queue, q)
-		}
-	}
-	maxD := 0
-	for len(queue) > 0 {
-		p := queue[0]
-		queue = queue[1:]
-		for _, q := range b.Neighbors(p) {
-			if in[q] {
-				if _, ok := depth[q]; !ok {
-					depth[q] = depth[p] + 1
-					if depth[q] > maxD {
-						maxD = depth[q]
-					}
-					queue = append(queue, q)
-				}
-			}
-		}
-	}
-	return maxD + 1
-}
-
 // Play places a stone. Returns the captured points.
 func (g *Game) Play(c rules.Color, x, y int, now time.Time) ([]int, error) {
 	if g.Phase != PhasePlay {
@@ -161,9 +131,6 @@ func (g *Game) Play(c rules.Color, x, y int, now time.Time) ([]int, error) {
 	}
 	if c != g.Turn {
 		return nil, fmt.Errorf("not your turn")
-	}
-	if now.Add(inputTolerance).Before(g.InputOpenAt) {
-		return nil, fmt.Errorf("animation in progress")
 	}
 	captured, err := g.Board.Play(c, x, y)
 	if err != nil {
@@ -174,15 +141,7 @@ func (g *Game) Play(c rules.Color, x, y int, now time.Time) ([]int, error) {
 	g.Last = g.Board.Index(x, y)
 	g.Passes = 0
 	g.Turn = c.Opponent()
-	anim := placeAnim
-	if layers := captureLayers(g.Board, g.Last, captured); layers > 0 {
-		chain := captureStart + time.Duration(layers-1)*captureLayer + captureStone
-		if chain > anim {
-			anim = chain
-		}
-	}
-	g.InputOpenAt = now.Add(anim)
-	g.Deadline = g.InputOpenAt.Add(g.moveTime())
+	g.Deadline = now.Add(g.moveTime())
 	g.PauseReq = rules.Empty
 	g.Seq++
 	return captured, nil
@@ -198,7 +157,6 @@ func (g *Game) Pass(c rules.Color, now time.Time) error {
 	g.Passes++
 	g.Turn = c.Opponent()
 	g.PauseReq = rules.Empty
-	g.InputOpenAt = now
 	g.Deadline = now.Add(g.moveTime())
 	if g.Passes >= 2 {
 		g.startScoring(now)
@@ -235,7 +193,6 @@ func (g *Game) PlayOn(now time.Time) {
 	g.Passes = 0
 	g.Dead = nil
 	g.Agree = [3]bool{}
-	g.InputOpenAt = now
 	g.Deadline = now.Add(g.moveTime())
 	g.Seq++
 }
@@ -248,6 +205,7 @@ func (g *Game) finishByScore() {
 	}
 	g.Result = &Result{Winner: w, Reason: "score", Score: &s, Diff: math.Abs(s.White - s.Black)}
 	g.Phase = PhaseResult
+	g.stopClock(time.Now())
 }
 
 func (g *Game) Resign(c rules.Color) {
@@ -256,6 +214,7 @@ func (g *Game) Resign(c rules.Color) {
 	}
 	g.Result = &Result{Winner: c.Opponent().Letter(), Reason: "resign"}
 	g.Phase = PhaseResult
+	g.stopClock(time.Now())
 	g.Seq++
 }
 
@@ -286,10 +245,7 @@ func (g *Game) AnswerPause(c rules.Color, accept bool, now time.Time) {
 		g.Phase = PhasePaused
 		g.Ready = [3]bool{}
 		g.Remaining = g.Deadline.Sub(now)
-		if wait := g.InputOpenAt.Sub(now); wait > 0 {
-			// a pause during an animation: keep the full move time for after the pause
-			g.Remaining = g.moveTime()
-		}
+		g.stopClock(now)
 	}
 	g.Seq++
 }
@@ -301,8 +257,8 @@ func (g *Game) SetReady(c rules.Color, ready bool, now time.Time) {
 	g.Ready[c] = ready
 	if g.Ready[rules.Black] && g.Ready[rules.White] {
 		g.Phase = PhasePlay
-		g.InputOpenAt = now
 		g.Deadline = now.Add(g.Remaining)
+		g.Running = now
 	}
 	g.Seq++
 }

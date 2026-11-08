@@ -23,7 +23,7 @@ type Session struct {
 	LastSeen time.Time `json:"lastSeen"`
 }
 
-// Tag is the short id shown next to a nickname, so equal nicknames can be told apart.
+// Tag is a short form of the player ID (no longer shown: nicknames are unique).
 func (s *Session) Tag() string { return "#" + s.ID[:4] }
 
 // SessionStore keeps sessions in memory and mirrors them to a JSON file so they survive restarts.
@@ -80,7 +80,7 @@ func (st *SessionStore) Get(token string) *Session {
 	}
 	if time.Since(s.LastSeen) > SessionTTL {
 		delete(st.byToken, s.Token)
-		delete(st.byID, s.ID)
+		st.unlink(s)
 		st.dirty = true
 		return nil
 	}
@@ -89,21 +89,48 @@ func (st *SessionStore) Get(token string) *Session {
 	return s
 }
 
-// Login creates a session, or renames the existing one when the token is still valid.
+// Login: the nickname is the player's login (no password yet). A known nickname (case does not
+// matter) signs this browser in as that player; a new nickname creates a new player. Several
+// browsers may be signed in as the same player at once: their sessions share the player's ID.
 func (st *SessionStore) Login(token, nick string) *Session {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	if s := st.byToken[token]; s != nil && time.Since(s.LastSeen) < SessionTTL {
-		s.Nick = nick
-		s.LastSeen = time.Now()
-		st.dirty = true
-		return s
+	now := time.Now()
+	id := ""
+	for _, o := range st.byToken {
+		if time.Since(o.LastSeen) < SessionTTL && strings.EqualFold(o.Nick, nick) {
+			id, nick = o.ID, o.Nick // keep the player's own spelling
+			break
+		}
 	}
-	s := &Session{ID: randomHex(8), Token: randomHex(24), Nick: nick, LastSeen: time.Now()}
-	st.byToken[s.Token] = s
-	st.byID[s.ID] = s
+	if id == "" {
+		id = randomHex(8) // a new player
+	}
+	s := st.byToken[token]
+	if s == nil || time.Since(s.LastSeen) >= SessionTTL {
+		s = &Session{Token: randomHex(24)}
+		st.byToken[s.Token] = s
+	} else if s.ID != id {
+		st.unlink(s) // this browser leaves its previous player
+	}
+	s.ID, s.Nick, s.LastSeen = id, nick, now
+	st.byID[id] = s
 	st.dirty = true
 	return s
+}
+
+// unlink drops s from the player index; another live session of the same player takes its place.
+func (st *SessionStore) unlink(s *Session) {
+	if st.byID[s.ID] != s {
+		return
+	}
+	delete(st.byID, s.ID)
+	for _, o := range st.byToken {
+		if o != s && o.ID == s.ID {
+			st.byID[s.ID] = o
+			return
+		}
+	}
 }
 
 func (st *SessionStore) ByID(id string) *Session {
@@ -119,7 +146,7 @@ func (st *SessionStore) loop() {
 		for tok, s := range st.byToken {
 			if time.Since(s.LastSeen) > SessionTTL {
 				delete(st.byToken, tok)
-				delete(st.byID, s.ID)
+				st.unlink(s)
 				st.dirty = true
 			}
 		}

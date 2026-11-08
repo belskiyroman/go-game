@@ -26,7 +26,8 @@ export function connect() {
   ws = sock;
   sock.onopen = () => { retry = 0; setApp('connected', true); };
   sock.onclose = () => {
-    if (ws === sock) ws = null;
+    if (ws !== sock && ws !== null) return; // an old connection replaced by reconnect()
+    ws = null;
     setApp('connected', false);
     if (wanted) setTimeout(connect, Math.min(5000, 500 * 2 ** retry++));
   };
@@ -51,6 +52,16 @@ export function connect() {
 }
 
 export function disconnect() { wanted = false; ws?.close(); }
+
+/** After signing in as another player: drop the old connection and the old player's state. */
+export function reconnect() {
+  const old = ws;
+  ws = null;
+  if (old) { old.onmessage = null; old.onclose = null; old.close(); }
+  setApp('game', null);
+  setApp('lobby', null);
+  connect();
+}
 
 export function send(msg: Record<string, unknown>) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));

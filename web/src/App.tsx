@@ -1,5 +1,5 @@
 import { Match, onMount, Show, Switch } from 'solid-js';
-import { app, setApp, settingsLabel } from './store';
+import { app, h2hLine, setApp, settingsLabel } from './store';
 import { connect, fetchMe, send } from './net';
 import { Login } from './ui/Login';
 import { Lobby } from './ui/Lobby';
@@ -48,6 +48,7 @@ export function App() {
                 <div><dt class="label">Время на ход</dt><dd>{settingsLabel(inv().settings).split(' · ')[2].replace(' на ход', '')}</dd></div>
                 <div><dt class="label">Ваш цвет</dt><dd>Случайно</dd></div>
               </dl>
+              <div class="h2h-line">{h2hLine(inv().h2h)}</div>
               <p class="muted" style={{ margin: 0, 'font-size': '14px' }}>Настройки задал пригласивший игрок.</p>
               <div class="grid2">
                 <button class="btn primary" onClick={() => send({ t: 'acceptInvite', from: inv().from })}>Принять</button>

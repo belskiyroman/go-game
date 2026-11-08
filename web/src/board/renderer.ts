@@ -1,13 +1,14 @@
 import { createCapture } from './gen/capture.js';
 import { createPlace } from './gen/place.js';
 import type { GameEvent, GameState } from '../store';
+import { createMoveSignal, type Signal } from './moveSignal';
 
 // Timing shared with the server (server/internal/app/game.go): the capture chain starts when
-// the capturing stone has separated from the board; each next link starts 300 ms later.
-const CAPTURE_START = 2.0;
-const CAPTURE_STEP = 0.3;
-const PLACE_END = 3.3;  // the placement animation is over
-const GO_OUT = 0.5;     // the last stone's live seal goes out in this time
+// the capturing stone has separated from the board; each next link starts 120 ms later.
+const CAPTURE_START = 0.95; // the stone forms in 0.9 s; the previous last stone has turned to coal / marble
+const CAPTURE_STEP = 0.12;
+const PLACE_END = 1.0;  // the placement animation is over (the stone forms in 0.9 s)
+const GO_OUT = 1.0;     // after the next move the last stone turns into coal / marble (0.9 s) and its seal goes out
 
 type Placed = { idx: number; color: 0 | 1; st: any; placedAt: number };
 type Group = { start: number; list: any[]; end: number };
@@ -34,6 +35,8 @@ export class BoardRenderer {
   private gl: WebGL2RenderingContext;
   private place: any;
   private capture: any;
+  private signal: ReturnType<typeof createMoveSignal>;
+  private signals: Signal[] = []; // glow of the newest move and the last-move beams
   private canvas: HTMLCanvasElement;
   private size = 19;
   private margin = 0;
@@ -63,6 +66,7 @@ export class BoardRenderer {
     const atlas = makeAtlas();
     this.place = createPlace(gl, atlas);
     this.capture = createCapture(gl, atlas);
+    this.signal = createMoveSignal(gl);
     this.blit = this.makeBlit();
     const loop = () => { this.frame(); this.raf = requestAnimationFrame(loop); };
     this.raf = requestAnimationFrame(loop);
@@ -124,12 +128,6 @@ export class BoardRenderer {
     return { idx, color, st, placedAt: -1000 };
   }
 
-  /** true while the stone at idx is still appearing (the cursor is hidden over it). */
-  isAppearing(idx: number) {
-    const p = this.stones.get(idx);
-    return !!p && now() - p.placedAt < PLACE_END;
-  }
-
   /** Apply a server update. Events animate; anything else is drawn as it is. */
   update(g: GameState, e: GameEvent | null) {
     const t = now();
@@ -141,6 +139,8 @@ export class BoardRenderer {
     if (e && e.kind === 'move') {
       const idx = e.y * g.size + e.x;
       if (this.live) this.live.st.ext = t - this.live.placedAt;
+      for (const s of this.signals) if (s.endAt === undefined) s.endAt = t;
+      this.signals.push({ idx, color: e.color === 'b' ? 0 : 1, start: t });
       const p = this.newStone(idx, e.color === 'b' ? 0 : 1, 1.3 + idx * 0.731 + g.moves * 0.173);
       p.placedAt = t;
       this.stones.set(idx, p);
@@ -179,13 +179,22 @@ export class BoardRenderer {
       const p = this.stones.get(g.last)!;
       delete p.st.ext; // the last stone keeps its live seal
       this.live = p;
+      this.signals = [{ idx: g.last, color: p.color, start: -1000 }]; // the beams only, no glow
+    } else {
+      this.signals = [];
     }
     this.staticDirty = true;
   }
 
-  /** Captured stones turn into a chain: neighbours of the move first, then outward, 300 ms per link. */
+  /** Captured stones turn into a chain: neighbours of the move first, then outward, 120 ms per link. */
   private startCapture(move: number, captured: number[], t: number, moves: number) {
-    const start = t + CAPTURE_START;
+    // moves are not blocked by animations: a stone captured while still forming first
+    // finishes forming and turning into coal / marble (0.9 s), then breaks
+    let start = t + CAPTURE_START;
+    for (const idx of captured) {
+      const p = this.stones.get(idx);
+      if (p) start = Math.max(start, p.placedAt + Math.max(t - p.placedAt, PLACE_END) + 0.9);
+    }
     const set = new Set(captured);
     const depth = new Map<number, number>();
     const from = new Map<number, number>();
@@ -209,6 +218,10 @@ export class BoardRenderer {
       this.pending.push({ p, until: start });
       const [x, y] = this.xy(idx);
       const st = this.capture.makeStone(p.color, this.margin + x * this.cell, this.margin + y * this.cell, this.cell * 0.47, 2.1 + idx * 0.37 + moves * 0.11);
+      // the breaking stone must look exactly like the stone it replaces: same glyph angle,
+      // same facets, outline and veins/layers (all derived from the stone's seed)
+      st.seed = p.st.seed;
+      st.glyphRot = p.st.glyphRot;
       st.depth = depth.get(idx) ?? 0;
       const src = from.get(idx) ?? move;
       const [sx, sy] = this.xy(src);
@@ -234,7 +247,7 @@ export class BoardRenderer {
     for (const p of this.stones.values()) {
       const local = t - p.placedAt;
       const ext = p.st.ext;
-      const done = local > PLACE_END && ext !== undefined && local > Math.max(ext, 2.7) + GO_OUT;
+      const done = local > PLACE_END && ext !== undefined && local > Math.max(ext, 1.4) + GO_OUT;
       if (done) settled++; else dynamic.push(p);
     }
     if (settled !== this.settledCount) { this.settledCount = settled; this.staticDirty = true; }
@@ -248,13 +261,18 @@ export class BoardRenderer {
       gl.viewport(0, 0, W, H);
       gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
       this.place.bindTex();
-      for (const p of this.stones.values()) if (!dynamic.includes(p)) this.place.drawPlacement(p.st, 1000);
+      // drawn at their own time: a stone restored on reload (placedAt -1000) may have finished
+      // its last-stone state only after t = 1000
+      for (const p of this.stones.values()) if (!dynamic.includes(p)) this.place.drawPlacement(p.st, t - p.placedAt);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       this.staticDirty = false;
     }
 
     gl.viewport(0, 0, W, H);
     gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    // under the stones: the glow of the newest move and the last-move beams
+    this.signals = this.signal.draw(this.signals, t, { w: this.cssW, h: this.cssH, size: this.size, margin: this.margin, cell: this.cell });
+
     // cached settled stones
     gl.useProgram(this.blit.p);
     gl.bindVertexArray(this.blit.vao);
@@ -264,7 +282,7 @@ export class BoardRenderer {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     this.place.bindTex();
-    for (const q of this.pending) this.place.drawPlacement(q.p.st, 1000);
+    for (const q of this.pending) this.place.drawPlacement(q.p.st, t - q.p.placedAt);
     for (const p of dynamic) this.place.drawPlacement(p.st, t - p.placedAt);
 
     if (this.groups.length) {

@@ -1,6 +1,6 @@
 import { createSignal } from 'solid-js';
 import { app, setApp } from '../store';
-import { connect, login, send } from '../net';
+import { connect, login, reconnect, send } from '../net';
 
 export function Login() {
   const [nick, setNick] = createSignal(app.me?.nick ?? '');
@@ -12,11 +12,12 @@ export function Login() {
     if (!nick().trim()) { setError('Введите ник'); return; }
     setBusy(true); setError('');
     try {
+      const prev = app.me?.id;
       const me = await login(nick());
       setApp('me', me);
       setApp('renaming', false);
-      connect();
-      send({ t: 'refresh' });
+      if (prev && prev !== me.id) reconnect(); // signed in as another player
+      else { connect(); send({ t: 'refresh' }); }
     } catch {
       setError('Не удалось войти. Попробуйте ещё раз.');
     } finally {
@@ -43,7 +44,7 @@ export function Login() {
           <span role="alert" style={{ color: 'var(--danger)', 'min-height': '20px' }}>{error()}</span>
         </form>
         <p class="muted" style={{ margin: 0, 'font-size': '14px', 'line-height': 1.55, 'text-align': 'center' }}>
-          Без регистрации. Ник виден другим только в этой сессии и может совпадать с чужим. Сессия хранится 2 дня с последнего захода.
+          Ник — это ваш логин, пароля пока нет. Новый ник создаёт нового игрока, существующий — входит под ним. Игрок хранится 2 дня с последнего захода.
         </p>
       </div>
     </main>

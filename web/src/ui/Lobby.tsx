@@ -1,5 +1,5 @@
 import { For, Show } from 'solid-js';
-import { app, setApp, komiLabel, timeLabel, type Settings } from '../store';
+import { app, setApp, komiLabel, timeLabel, type Settings, h2hLine } from '../store';
 import { send } from '../net';
 
 const SIZES = [9, 13, 15, 19];
@@ -16,7 +16,7 @@ export function Topbar(props: { info?: string }) {
       </div>
       <Show when={!props.info}>
         <div style={{ display: 'flex', 'align-items': 'center', gap: '12px' }}>
-          <span class="muted" style={{ 'font-size': '15px' }}>Вы: <strong style={{ color: 'var(--text)' }}>{app.me?.nick}</strong> <span style={{ 'font-size': '13px' }}>{app.me?.tag}</span></span>
+          <span class="muted" style={{ 'font-size': '15px' }}>Вы: <strong style={{ color: 'var(--text)' }}>{app.me?.nick}</strong></span>
           <button class="btn ghost small" onClick={() => setApp('renaming', true)}>Сменить ник</button>
         </div>
       </Show>
@@ -76,8 +76,10 @@ export function Lobby() {
                     <span class={`dot ${p.status}`} aria-hidden="true" />
                     <div style={{ flex: '1 1 200px', 'min-width': 0, display: 'flex', 'align-items': 'baseline', gap: '8px' }}>
                       <span style={{ 'font-size': '16px', 'font-weight': 700, overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>{p.nick}</span>
-                      <span style={{ 'font-size': '13px', color: '#8f9397' }}>{p.tag}</span>
                     </div>
+                    <span class="h2h" classList={{ ahead: p.h2h?.[0] > p.h2h?.[1], behind: p.h2h?.[0] < p.h2h?.[1] }} title="Ваш счёт встреч с этим игроком">
+                      {p.h2h && p.h2h[0] + p.h2h[1] > 0 ? `${p.h2h[0]} : ${p.h2h[1]}` : '—'}
+                    </span>
                     <span class="muted" style={{ 'font-size': '14px', 'min-width': '110px' }}>{p.status === 'playing' ? 'Играет' : 'Свободен'}</span>
                     <div style={{ 'min-width': '130px', display: 'flex', 'justify-content': 'flex-end' }}>
                       <Show when={p.status === 'free'}>
@@ -103,6 +105,7 @@ export function Lobby() {
               <div style={{ display: 'flex', 'align-items': 'center', gap: '12px', color: '#c9c3ba' }}>
                 <div class="spinner" /><span>Игрок ещё не принял и не отклонил приглашение</span>
               </div>
+              <div class="h2h-line">{h2hLine(o().h2h)}</div>
               <dl class="params">
                 <div><dt class="label">Доска</dt><dd>{o().settings.size}×{o().settings.size}</dd></div>
                 <div><dt class="label">Коми</dt><dd>{komiLabel(o().settings.komi)}</dd></div>

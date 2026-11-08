@@ -30,6 +30,7 @@ type Invite struct {
 type Hub struct {
 	mu         sync.Mutex
 	sessions   *SessionStore
+	results    *ResultStore
 	conns      map[string]map[*Conn]bool
 	settings   map[string]Settings
 	invites    map[string]*Invite // by inviter id
@@ -37,9 +38,9 @@ type Hub struct {
 	playerGame map[string]*Game // the game a player is in (also a finished one until they leave)
 }
 
-func NewHub(sessions *SessionStore) *Hub {
+func NewHub(sessions *SessionStore, results *ResultStore) *Hub {
 	return &Hub{
-		sessions: sessions, conns: map[string]map[*Conn]bool{}, settings: map[string]Settings{},
+		sessions: sessions, results: results, conns: map[string]map[*Conn]bool{}, settings: map[string]Settings{},
 		invites: map[string]*Invite{}, games: map[string]*Game{}, playerGame: map[string]*Game{},
 	}
 }
@@ -326,6 +327,15 @@ func (h *Hub) armTimer(g *Game) {
 }
 
 func (h *Hub) broadcastGame(g *Game, event map[string]any) {
+	// a finished game counts once in the players' head-to-head score
+	if g.Result != nil && !g.Recorded {
+		g.Recorded = true
+		w := rules.Black
+		if g.Result.Winner == "w" {
+			w = rules.White
+		}
+		h.results.Add(g.Nicks[w], g.Nicks[w.Opponent()])
+	}
 	for _, c := range []rules.Color{rules.Black, rules.White} {
 		id := g.Players[c]
 		if h.playerGame[id] == g {
@@ -347,9 +357,11 @@ func (h *Hub) sendGame(g *Game, sessionID string, event ...map[string]any) {
 		"phase": g.Phase, "pauseReq": g.PauseReq.Letter(),
 		"ready":     map[string]bool{"b": g.Ready[rules.Black], "w": g.Ready[rules.White]},
 		"agree":     map[string]bool{"b": g.Agree[rules.Black], "w": g.Agree[rules.White]},
-		"serverNow": ms(now), "deadline": ms(g.Deadline), "inputOpenAt": ms(g.InputOpenAt),
+		"serverNow": ms(now), "deadline": ms(g.Deadline),
 		"remaining": g.Remaining.Milliseconds(),
-		"moves":     len(g.Moves),
+		"played":    g.PlayedTime(now).Milliseconds(), "playedRunning": !g.Running.IsZero(),
+		"moves": len(g.Moves),
+		"h2h":   h.h2h(g.Nicks[rules.Black], g.Nicks[rules.White]),
 	}
 	if g.Phase == PhaseScoring || g.Phase == PhaseResult {
 		dead := []int{}
@@ -386,6 +398,7 @@ func (h *Hub) broadcastLobby() {
 		Nick   string `json:"nick"`
 		Tag    string `json:"tag"`
 		Status string `json:"status"` // free | playing
+		H2H    [2]int `json:"h2h"`    // wins of the viewer against this player, and of this player against the viewer
 	}
 	all := []player{}
 	for id := range h.conns {
@@ -406,24 +419,30 @@ func (h *Hub) broadcastLobby() {
 		return all[i].ID < all[j].ID
 	})
 	for id := range h.conns {
+		me := h.sessions.ByID(id)
+		if me == nil {
+			continue
+		}
+		vs := func(nick string) [2]int { a, b := h.results.Score(me.Nick, nick); return [2]int{a, b} }
 		var outgoing any
 		if inv := h.invites[id]; inv != nil {
 			to := h.sessions.ByID(inv.To)
 			if to != nil {
-				outgoing = map[string]any{"to": inv.To, "nick": to.Nick, "tag": to.Tag(), "settings": inv.Settings}
+				outgoing = map[string]any{"to": inv.To, "nick": to.Nick, "tag": to.Tag(), "settings": inv.Settings, "h2h": vs(to.Nick)}
 			}
 		}
 		incoming := []map[string]any{}
 		for _, inv := range h.invites {
 			if inv.To == id {
 				if from := h.sessions.ByID(inv.From); from != nil {
-					incoming = append(incoming, map[string]any{"from": inv.From, "nick": from.Nick, "tag": from.Tag(), "settings": inv.Settings})
+					incoming = append(incoming, map[string]any{"from": inv.From, "nick": from.Nick, "tag": from.Tag(), "settings": inv.Settings, "h2h": vs(from.Nick)})
 				}
 			}
 		}
 		players := make([]player, 0, len(all))
 		for _, p := range all {
 			if p.ID != id {
+				p.H2H = vs(p.Nick)
 				players = append(players, p)
 			}
 		}
@@ -432,4 +451,10 @@ func (h *Hub) broadcastLobby() {
 			"settings": h.settingsOf(id), "outgoing": outgoing, "incoming": incoming,
 		})
 	}
+}
+
+// h2h is the head-to-head score of the game's players: {"b": black's wins, "w": white's wins}.
+func (h *Hub) h2h(black, white string) map[string]int {
+	b, w := h.results.Score(black, white)
+	return map[string]int{"b": b, "w": w}
 }

@@ -2,9 +2,10 @@ import { createStore } from 'solid-js/store';
 
 export type Settings = { size: number; komi: number; moveTime: number };
 export type Me = { id: string; nick: string; tag: string };
-export type Player = { id: string; nick: string; tag: string; status: 'free' | 'playing' };
-export type Outgoing = { to: string; nick: string; tag: string; settings: Settings };
-export type Incoming = { from: string; nick: string; tag: string; settings: Settings };
+// h2h: head-to-head wins [yours against this player, theirs against you]
+export type Player = { id: string; nick: string; tag: string; status: 'free' | 'playing'; h2h: [number, number] };
+export type Outgoing = { to: string; nick: string; tag: string; settings: Settings; h2h: [number, number] };
+export type Incoming = { from: string; nick: string; tag: string; settings: Settings; h2h: [number, number] };
 export type Lobby = { players: Player[]; online: number; settings: Settings; outgoing: Outgoing | null; incoming: Incoming[] };
 
 export type Side = 'b' | 'w';
@@ -20,7 +21,9 @@ export type GameState = {
   pauseReq: Side | '';
   ready: { b: boolean; w: boolean };
   agree: { b: boolean; w: boolean };
-  serverNow: number; deadline: number; inputOpenAt: number; remaining: number; moves: number;
+  serverNow: number; deadline: number; remaining: number; moves: number;
+  played: number; playedRunning: boolean; // game time without pauses, ms at serverNow
+  h2h?: { b: number; w: number }; // head-to-head wins of the two players
   dead?: number[]; territory?: { b: number[]; w: number[] };
   result?: { winner: Side; reason: 'score' | 'resign'; score?: Score; diff: number };
   sgf?: string;
@@ -55,4 +58,6 @@ export const serverNow = () => Date.now() + app.clockOffset;
 
 export const komiLabel = (k: number) => String(k).replace('.', ',');
 export const timeLabel = (s: number) => (s < 60 ? `${s} с` : `${s / 60} мин`);
+/** Head-to-head line for invitations: "Ваши встречи: 7 : 4". */
+export const h2hLine = (s?: [number, number]) => (!s || s[0] + s[1] === 0 ? 'Вы ещё не играли друг с другом' : `Ваши встречи: ${s[0]} : ${s[1]}`);
 export const settingsLabel = (s: Settings) => `${s.size}×${s.size} · коми ${komiLabel(s.komi)} · ${timeLabel(s.moveTime)} на ход`;
