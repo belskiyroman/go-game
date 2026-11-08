@@ -149,7 +149,6 @@ export function Game() {
             <strong>{fmtLong(played())}</strong>
           </div>
           <div class="gameclock h2h-box" aria-label={`Счёт встреч: ${nickOf('b')} ${g().h2h?.b ?? 0}, ${nickOf('w')} ${g().h2h?.w ?? 0}`}>
-            <span class="muted">Счёт встреч</span>
             <div class="h2h-row" aria-hidden="true">
               <span class="h2h-nick" style={{ 'text-align': 'right' }}>{nickOf('b')}</span>
               <strong class="h2h-score">
