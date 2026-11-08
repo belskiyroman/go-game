@@ -85,7 +85,8 @@ type Game struct {
 	Recorded bool // the result was counted in the head-to-head score
 
 	// alternative games: a copy of another game that starts from a chosen move
-	Parent   string    // the game this one was copied from ("" for a game started from an invitation)
+	Parent   string    // the main game this one was copied from ("" for a main game)
+	Created  time.Time // when the game was created (orders the alternatives of a main game)
 	From     int       // the move it started from
 	Source   []Move    // setup: the moves of the parent game to choose the start move from
 	Proposal *Proposal // setup: the start move one player offered
@@ -109,7 +110,7 @@ func NewGame(s Settings, black, white *Session) *Game {
 	g.Tags[rules.Black], g.Tags[rules.White] = black.Tag(), white.Tag()
 	now := time.Now()
 	g.Deadline = now.Add(g.moveTime())
-	g.Running = now
+	g.Running, g.Created = now, now
 	return g
 }
 

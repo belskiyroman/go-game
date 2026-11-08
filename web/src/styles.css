@@ -131,10 +131,18 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 .row-gap { display: flex; align-items: center; gap: 14px; }
 .miniboard { display: block; border-radius: 8px; box-shadow: 0 8px 20px rgba(0, 0, 0, .35); flex: none; }
 .mygames { max-width: 1200px; margin: 0 auto; padding: 24px 16px; display: flex; flex-direction: column; gap: 20px; }
-.games { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
 .gcard { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .gcard .miniboard { width: 100%; height: auto; }
 .gcard.off .miniboard { opacity: .62; }
 .gcard .vs { font-weight: 800; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .gcard .meta { font-size: 13px; color: var(--muted); line-height: 1.6; }
 .gcard-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: auto; }
+/* the board shows an offered start move: a blue frame until the game starts or the offer is gone */
+.frame.offer { background: linear-gradient(180deg, #16304f, #0f2440); }
+.frame.offer .coord { color: #9cc6f5; }
+.chip.main { background: #2a2e32; color: var(--text); }
+.gcard.now { border-color: var(--ok); }
+.gamerow { display: flex; flex-direction: column; gap: 10px; }
+.gamerow-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.gamerow-cards { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 6px; }
+.gamerow-cards .gcard { flex: 0 0 250px; }

@@ -6,6 +6,9 @@ const SIZES = [9, 13, 15, 19];
 const KOMI = [4.5, 5.5, 6.5, 7.5];
 const TIMES = [30, 60, 120, 180, 300, 600];
 
+/** How many games wait in "My games" to be continued. */
+const adjourned = () => (app.lobby?.games ?? []).filter((g) => !g.current).length;
+
 export function Topbar(props: { info?: string }) {
   return (
     <header class="topbar">
@@ -20,7 +23,7 @@ export function Topbar(props: { info?: string }) {
           <button class="btn small" onClick={() => setApp('view', 'main')}>{app.game ? 'К партии' : 'Комната'}</button>
         </Show>
         <button class="btn small" classList={{ on: app.view === 'games' }} aria-pressed={app.view === 'games'} onClick={() => setApp('view', 'games')}>
-          Мои партии<Show when={(app.lobby?.games.length ?? 0) > 0}><span class="count">{app.lobby!.games.length}</span></Show>
+          Мои партии<Show when={adjourned() > 0}><span class="count">{adjourned()}</span></Show>
         </button>
       </nav>
     </header>

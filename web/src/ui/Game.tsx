@@ -102,7 +102,12 @@ export function Game() {
   const stoneOf = (s: Side) => (s === 'b' ? 'чёрные 火' : 'белые 冰');
 
   // requests to the opponent
-  const REQ_MINE = { alt: 'Вы предложили альтернативный розыгрыш', adjourn: 'Вы предложили отложить партию', close: 'Вы предложили закрыть партию без подсчёта' };
+  const REQ_MINE = {
+    alt: 'Вы предложили альтернативный розыгрыш', adjourn: 'Вы предложили отложить партию', close: 'Вы предложили закрыть партию без подсчёта',
+    back: 'Вы предложили вернуться в основную партию', promote: 'Вы предложили сделать эту партию основной',
+  };
+  const REQ_LABEL = { alt: 'Альтернативный розыгрыш', adjourn: 'Отложить партию', close: 'Закрыть партию', back: 'Вернуться в основную партию', promote: 'Сделать основной партией' };
+  const REQ_ASK = { alt: 'альтернативный розыгрыш', adjourn: 'отложить партию', close: 'закрыть партию без подсчёта', back: 'вернуться в основную партию', promote: 'сделать эту партию основной' };
   const myReq = () => (g().req && g().req!.from === me() ? g().req! : null);
   const theirReq = () => (g().req && g().req!.from !== me() ? g().req! : null);
   const ongoing = () => ['play', 'paused', 'scoring', 'setup'].includes(g().phase);
@@ -114,7 +119,7 @@ export function Game() {
       <Topbar info={`${g().size}×${g().size} · коми ${komiLabel(g().komi)} · ${timeLabel(g().moveTime)} на ход`} />
       <main class="game">
         <div class="board-col">
-          <Board blurred={g().phase === 'paused'} view={view()} />
+          <Board blurred={g().phase === 'paused'} view={view()} offer={!!proposal()} />
           <Show when={startNote()}>
             <div class="pass-note" role="status">Игра началась</div>
           </Show>
@@ -138,6 +143,7 @@ export function Game() {
           <Show when={g().parent && g().phase !== 'setup'}>
             <div class="altline"><span class="chip alt">Альтернативный розыгрыш</span><span class="muted">с хода {g().from}</span></div>
           </Show>
+          <Show when={g().phase !== 'setup'}>
           <div class="gameclock" aria-label="Время партии без пауз">
             <span class="muted">Время партии</span>
             <strong>{fmtLong(played())}</strong>
@@ -172,6 +178,7 @@ export function Game() {
               </section>
             )}
           </For>
+          </Show>
 
           <Show when={g().phase === 'play'}>
             <div style={{ padding: '12px 14px', 'border-radius': '12px', background: '#1f2225', border: '1px solid #33383d', display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
@@ -257,8 +264,21 @@ export function Game() {
               when={myReq()}
               fallback={
                 <div style={{ display: 'flex', 'flex-direction': 'column', gap: '8px' }}>
-                  <Show when={g().phase !== 'setup' && g().moves > 0}>
-                    <button class="btn small" disabled={!!g().req} onClick={() => send({ t: 'ask', kind: 'alt' })}>Альтернативный розыгрыш</button>
+                  <Show
+                    when={g().parent}
+                    fallback={
+                      <Show when={g().moves > 0}>
+                        <button class="btn small" disabled={!!g().req || g().alts >= 5} onClick={() => send({ t: 'ask', kind: 'alt' })}>Альтернативный розыгрыш</button>
+                        <Show when={g().alts >= 5}><span class="muted" style={{ 'font-size': '13px' }}>У партии уже 5 альтернативных розыгрышей: закройте один из них, чтобы начать новый.</span></Show>
+                      </Show>
+                    }
+                  >
+                    <Show when={g().mainOpen}>
+                      <button class="btn small" disabled={!!g().req} onClick={() => send({ t: 'ask', kind: 'back' })}>Вернуться в основную партию</button>
+                    </Show>
+                    <Show when={g().phase !== 'setup'}>
+                      <button class="btn small" disabled={!!g().req} onClick={() => send({ t: 'ask', kind: 'promote' })}>Сделать основной партией</button>
+                    </Show>
                   </Show>
                   <div class="grid2">
                     <button class="btn small" disabled={!!g().req} onClick={() => send({ t: 'ask', kind: 'adjourn' })}>Отложить</button>
@@ -306,11 +326,6 @@ export function Game() {
                 <button class="btn" onClick={downloadSgf}>Скачать SGF</button>
               </div>
               <Show when={rematchPending()}><button class="btn ghost small" onClick={() => send({ t: 'cancelInvite' })}>Отменить реванш</button></Show>
-              <Show when={g().moves > 0}>
-                <Show when={myReq()} fallback={<button class="btn small" disabled={!!g().req} onClick={() => send({ t: 'ask', kind: 'alt' })}>Альтернативный розыгрыш</button>}>
-                  <button class="btn small" onClick={() => send({ t: 'askCancel' })}>Ждём ответа на розыгрыш · отозвать</button>
-                </Show>
-              </Show>
               <button class="btn ghost" onClick={() => send({ t: 'leave' })}>В комнату</button>
             </div>
           </Show>
@@ -322,16 +337,23 @@ export function Game() {
           <div class="modal-back" role="alertdialog" aria-modal="true" aria-labelledby="rq-title">
             <div class="card modal">
               <div>
-                <span class="label">{r().kind === 'alt' ? 'Альтернативный розыгрыш' : r().kind === 'adjourn' ? 'Отложить партию' : 'Закрыть партию'}</span>
-                <h2 id="rq-title" style={{ 'font-size': '22px', 'margin-top': '6px' }}>
-                  {nickOf(opp())} предлагает {r().kind === 'alt' ? 'альтернативный розыгрыш' : r().kind === 'adjourn' ? 'отложить партию' : 'закрыть партию без подсчёта'}
-                </h2>
+                <span class="label">{REQ_LABEL[r().kind]}</span>
+                <h2 id="rq-title" style={{ 'font-size': '22px', 'margin-top': '6px' }}>{nickOf(opp())} предлагает {REQ_ASK[r().kind]}</h2>
               </div>
               <ul class="reqlist">
                 <Show when={r().kind === 'alt'}>
-                  <li>{g().phase === 'result' ? 'Результат этой партии не изменится.' : 'Эта партия будет отложена: камни остаются, часы стоят.'}</li>
+                  <li>Эта партия будет отложена: камни остаются, часы стоят.</li>
                   <li>Вы оба перейдёте в её копию и выберете ход, с которого начать.</li>
-                  <Show when={g().phase !== 'result'}><li>Вернуться к ней можно через «Мои партии».</li></Show>
+                  <li>Из копии можно вернуться в эту партию или сделать копию основной.</li>
+                </Show>
+                <Show when={r().kind === 'back'}>
+                  <li>Этот альтернативный розыгрыш закроется без подсчёта и в счёт встреч не пойдёт.</li>
+                  <li>Основная партия продолжится с того места, где её отложили, часы — с остатка.</li>
+                </Show>
+                <Show when={r().kind === 'promote'}>
+                  <li>Основная партия закроется без подсчёта и в счёт встреч не пойдёт.</li>
+                  <li>Эта партия станет основной: у неё могут быть свои альтернативные розыгрыши.</li>
+                  <Show when={g().alts > 1}><li>Другие альтернативные розыгрыши основной партии ({g().alts - 1}) перейдут к этой.</li></Show>
                 </Show>
                 <Show when={r().kind === 'adjourn'}>
                   <li>Часы остановятся, вы оба вернётесь в комнату.</li>
@@ -340,6 +362,7 @@ export function Game() {
                 <Show when={r().kind === 'close'}>
                   <li>Партия закончится без подсчёта и без победителя.</li>
                   <li>В счёт встреч она не пойдёт.</li>
+                  <Show when={!g().parent && g().alts > 0}><li>Её альтернативные розыгрыши ({g().alts}) станут отдельными партиями.</li></Show>
                 </Show>
               </ul>
               <div class="grid2">

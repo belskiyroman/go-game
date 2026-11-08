@@ -9,7 +9,8 @@ export type Side = 'b' | 'w';
 export type MyGame = {
   id: string; you: Side; opp: string; size: number; komi: number; moveTime: number;
   board: string; last: number; moves: number; turn: Side;
-  alt: boolean; from: number; setup: boolean; // an alternative game, its start move; adjourned while choosing the start
+  alt: boolean; from: number; setup: boolean; // an alternative game, its start move; still choosing the start
+  main: string; current: boolean;              // the main game of its row; the game being played now
   adjournedAt: number; available: boolean;     // the opponent is online and not in a game
 };
 export type Outgoing = { to: string; nick: string; tag: string; settings: Settings; h2h: [number, number]; game?: MyGame | null };
@@ -36,7 +37,9 @@ export type GameState = {
   sgf?: string;
   away: Side | '';               // this player went offline and ran out of time: the other one decides
   parent: string; from: number;  // an alternative game: the game it was copied from and the start move
-  req?: { kind: 'alt' | 'adjourn' | 'close'; from: Side }; // a request waiting for an answer
+  req?: { kind: 'alt' | 'adjourn' | 'close' | 'back' | 'promote'; from: Side }; // a request waiting for an answer
+  alts: number;      // how many alternatives the main game of this game has (at most 5)
+  mainOpen: boolean; // an alternative: its main game is adjourned and the players can go back to it
   source?: [number, number, number][]; // setup: the moves to choose from, [color 1|2, x, y] (a pass is x = -1)
   proposal?: { from: Side; step: number; swap: boolean }; // setup: the offered start move
 };

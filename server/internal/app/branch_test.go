@@ -74,9 +74,14 @@ func TestAlternativeGame(t *testing.T) {
 		t.Fatalf("the player to move must get the full time, has %v", left)
 	}
 
-	// "My games" lists the adjourned main game for both nicknames
-	if l := h.myGames("alpha"); len(l) != 1 || l[0] != main {
+	// "My games" lists the adjourned main game and the alternative being played, in one row
+	if l := h.myGames("alpha"); len(l) != 2 || l[0] != main || l[1] != alt || mainOf(alt) != main.ID || adjournedCount(l) != 1 {
 		t.Fatalf("my games: %v", l)
+	}
+	// an alternative has no alternatives of its own
+	h.handle(a, inMsg{T: "ask", Kind: ReqAlt})
+	if alt.Req != nil {
+		t.Fatal("an alternative of an alternative was requested")
 	}
 
 	// closing the alternative by agreement: not counted, not kept, players are free
@@ -98,8 +103,8 @@ func TestAlternativeGame(t *testing.T) {
 	if h.playerGame[a.ID] != main || main.Phase != PhasePlay || len(main.Moves) != 5 {
 		t.Fatalf("main not resumed: phase %s", main.Phase)
 	}
-	if len(h.myGames("alpha")) != 0 {
-		t.Fatal("a resumed game is not in My games")
+	if l := h.myGames("alpha"); len(l) != 1 || adjournedCount(l) != 0 {
+		t.Fatal("a resumed game is the current game in My games")
 	}
 }
 
@@ -177,5 +182,80 @@ func TestAdjournedGamesSurviveRestart(t *testing.T) {
 		if x.Parent != "" && (x.Resume != PhaseSetup || len(x.Source) != 3) {
 			t.Fatalf("alternative in setup lost its state: %+v", x)
 		}
+	}
+}
+
+// startAlt: a asks for an alternative of the game they are in, b accepts, b offers move 2, a accepts.
+func startAlt(t *testing.T, h *Hub, a, b *Session) *Game {
+	h.handle(a, inMsg{T: "ask", Kind: ReqAlt})
+	h.handle(b, inMsg{T: "askAnswer", Accept: true})
+	alt := h.playerGame[a.ID]
+	h.handle(b, inMsg{T: "propose", Step: 2})
+	h.handle(a, inMsg{T: "proposeAnswer", Accept: true})
+	if alt.Phase != PhasePlay || alt.Parent == "" {
+		t.Fatalf("alternative did not start: %s", alt.Phase)
+	}
+	return alt
+}
+
+func TestBackToMainAndPromote(t *testing.T) {
+	h, a, b := testHub(t, "")
+	h.startGame(&Invite{From: a.ID, To: b.ID, Settings: DefaultSettings()})
+	main := h.playerGame[a.ID]
+	playOpening(t, main, 4)
+	main.Deadline = time.Now().Add(42 * time.Second)
+
+	// back to the main game: the alternative is closed, the main game goes on with its clock
+	alt := startAlt(t, h, a, b)
+	h.handle(b, inMsg{T: "ask", Kind: ReqBack})
+	h.handle(a, inMsg{T: "askAnswer", Accept: true})
+	if h.games[alt.ID] != nil || h.playerGame[a.ID] != main || h.playerGame[b.ID] != main || main.Phase != PhasePlay {
+		t.Fatalf("not back in the main game: phase %s", main.Phase)
+	}
+	if left := time.Until(main.Deadline); left < 41*time.Second || left > 42*time.Second {
+		t.Fatalf("main clock %v, want about 42s", left)
+	}
+
+	// two alternatives; the second one becomes the main game: the old main is closed and the
+	// first alternative now belongs to the new main game
+	first := startAlt(t, h, a, b)
+	h.handle(a, inMsg{T: "ask", Kind: ReqBack})
+	h.handle(b, inMsg{T: "askAnswer", Accept: false}) // declined: stay in the alternative
+	h.handle(a, inMsg{T: "ask", Kind: ReqAdjourn})
+	h.handle(b, inMsg{T: "askAnswer", Accept: true})
+	h.handle(a, inMsg{T: "resume", Game: main.ID})
+	h.handle(b, inMsg{T: "acceptInvite", From: a.ID})
+	second := startAlt(t, h, a, b)
+	h.handle(a, inMsg{T: "ask", Kind: ReqPromote})
+	h.handle(b, inMsg{T: "askAnswer", Accept: true})
+	if second.Parent != "" || h.games[main.ID] != nil || first.Parent != second.ID {
+		t.Fatalf("promote: second.Parent=%q main kept=%v first.Parent=%q", second.Parent, h.games[main.ID] != nil, first.Parent)
+	}
+	if x, y := h.results.Score("Alpha", "Beta"); x+y != 0 {
+		t.Fatalf("the closed main game was counted: %d %d", x, y)
+	}
+
+	// the new main game ends: its alternative becomes a main game of its own
+	h.handle(a, inMsg{T: "resign"})
+	if first.Parent != "" {
+		t.Fatal("an alternative of a finished game must become a main game")
+	}
+}
+
+func TestAltLimit(t *testing.T) {
+	h, a, b := testHub(t, "")
+	h.startGame(&Invite{From: a.ID, To: b.ID, Settings: DefaultSettings()})
+	main := h.playerGame[a.ID]
+	playOpening(t, main, 2)
+	for i := 0; i < MaxAlts; i++ {
+		startAlt(t, h, a, b)
+		h.handle(a, inMsg{T: "ask", Kind: ReqAdjourn})
+		h.handle(b, inMsg{T: "askAnswer", Accept: true})
+		h.handle(a, inMsg{T: "resume", Game: main.ID})
+		h.handle(b, inMsg{T: "acceptInvite", From: a.ID})
+	}
+	h.handle(a, inMsg{T: "ask", Kind: ReqAlt})
+	if main.Req != nil || len(h.altsOf(main.ID)) != MaxAlts {
+		t.Fatalf("limit not kept: %d alternatives, request %+v", len(h.altsOf(main.ID)), main.Req)
 	}
 }

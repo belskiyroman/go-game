@@ -10,17 +10,24 @@ import (
 
 // Requests that need the opponent's consent, alternative games and adjourned games.
 //
-// An alternative game is a copy of a game that starts from a move the players agree on. Until
-// then it is in the setup phase: each player picks a move and may offer it, with or without
-// swapping colors; the game starts when the other player accepts. After that it is an ordinary
-// game. The game it was copied from is adjourned (or stays finished if it was over).
+// An alternative game is a copy of a main game that starts from a move the players agree on.
+// Until then it is in the setup phase: each player picks a move and may offer it, with or without
+// swapping colors; the game starts when the other player accepts. The main game is adjourned
+// meanwhile. An alternative cannot have alternatives of its own; instead the players may go back
+// to the main game (the alternative is closed) or make the alternative the main game (the old
+// main game is closed). A main game has at most MaxAlts alternatives.
 
 // Request kinds.
 const (
 	ReqAlt     = "alt"     // play an alternative from this game
 	ReqAdjourn = "adjourn" // freeze the game, both go to the room
 	ReqClose   = "close"   // end the game without counting; it is not counted in the score
+	ReqBack    = "back"    // close this alternative and go back to the main game
+	ReqPromote = "promote" // make this alternative the main game; the old main game is closed
 )
+
+// MaxAlts is how many alternatives a main game may have at once.
+const MaxAlts = 5
 
 type Request struct {
 	Kind string
@@ -42,11 +49,19 @@ func (g *Game) Ask(c rules.Color, kind string) error {
 	}
 	switch kind {
 	case ReqAlt:
-		if len(g.Moves) == 0 || !(g.Phase == PhasePlay || g.Phase == PhasePaused || g.Phase == PhaseScoring || g.Phase == PhaseResult) {
+		if g.Parent != "" || len(g.Moves) == 0 || !(g.Phase == PhasePlay || g.Phase == PhasePaused || g.Phase == PhaseScoring) {
 			return errNotNow
 		}
 	case ReqAdjourn, ReqClose:
 		if !g.Active() {
+			return errNotNow
+		}
+	case ReqBack:
+		if g.Parent == "" || !g.Active() {
+			return errNotNow
+		}
+	case ReqPromote:
+		if g.Parent == "" || !(g.Phase == PhasePlay || g.Phase == PhasePaused || g.Phase == PhaseScoring) {
 			return errNotNow
 		}
 	default:
@@ -65,11 +80,11 @@ func (g *Game) CancelAsk(c rules.Color) {
 }
 
 // Branch makes the alternative game: same players and settings, in the setup phase.
-func (g *Game) Branch() *Game {
+func (g *Game) Branch(now time.Time) *Game {
 	return &Game{
 		ID: randomHex(6), Settings: g.Settings, Players: g.Players, Nicks: g.Nicks, Tags: g.Tags,
 		Board: rules.NewBoard(g.Settings.Size), Turn: rules.Black, Last: -1, Phase: PhaseSetup,
-		Parent: g.ID, Source: append([]Move(nil), g.Moves...),
+		Parent: g.ID, Source: append([]Move(nil), g.Moves...), Created: now,
 	}
 }
 
