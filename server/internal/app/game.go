@@ -42,10 +42,12 @@ type Result struct {
 
 // Game phases.
 const (
-	PhasePlay    = "play"
-	PhasePaused  = "paused"
-	PhaseScoring = "scoring"
-	PhaseResult  = "result"
+	PhasePlay      = "play"
+	PhasePaused    = "paused"
+	PhaseScoring   = "scoring"
+	PhaseResult    = "result"
+	PhaseSetup     = "setup"     // an alternative game before it starts: the players choose the start move
+	PhaseAdjourned = "adjourned" // frozen until both players agree to continue it from "My games"
 )
 
 type Game struct {
@@ -81,7 +83,19 @@ type Game struct {
 
 	Result   *Result
 	Recorded bool // the result was counted in the head-to-head score
-	Seq      int  // increases with every change; clients use it to order events
+
+	// alternative games: a copy of another game that starts from a chosen move
+	Parent   string    // the main game this one was copied from ("" for a main game)
+	Created  time.Time // when the game was created (orders the alternatives of a main game)
+	From     int       // the move it started from
+	Source   []Move    // setup: the moves of the parent game to choose the start move from
+	Proposal *Proposal // setup: the start move one player offered
+
+	Req         *Request    // a request waiting for the opponent's answer: alternative, adjourn or close
+	Resume      string      // adjourned: the phase to return to
+	AdjournedAt time.Time   // when the game was adjourned
+	Away        rules.Color // the player to move went offline and ran out of time: the other one decides
+	Seq         int         // increases with every change; clients use it to order events
 
 	timer *time.Timer
 }
@@ -96,7 +110,7 @@ func NewGame(s Settings, black, white *Session) *Game {
 	g.Tags[rules.Black], g.Tags[rules.White] = black.Tag(), white.Tag()
 	now := time.Now()
 	g.Deadline = now.Add(g.moveTime())
-	g.Running = now
+	g.Running, g.Created = now, now
 	return g
 }
 
@@ -126,7 +140,8 @@ func (g *Game) ColorOf(sessionID string) rules.Color {
 	return rules.Empty
 }
 
-func (g *Game) Active() bool { return g.Phase != PhaseResult }
+// Active: the game is being played (setup included); finished and adjourned games are not.
+func (g *Game) Active() bool { return g.Phase != PhaseResult && g.Phase != PhaseAdjourned }
 
 // Play places a stone. Returns the captured points.
 func (g *Game) Play(c rules.Color, x, y int, now time.Time) ([]int, error) {
@@ -209,15 +224,17 @@ func (g *Game) finishByScore() {
 	}
 	g.Result = &Result{Winner: w, Reason: "score", Score: &s, Diff: math.Abs(s.White - s.Black)}
 	g.Phase = PhaseResult
+	g.Req, g.Away = nil, rules.Empty
 	g.stopClock(time.Now())
 }
 
 func (g *Game) Resign(c rules.Color) {
-	if g.Phase == PhaseResult {
+	if g.Phase != PhasePlay && g.Phase != PhasePaused && g.Phase != PhaseScoring {
 		return
 	}
 	g.Result = &Result{Winner: c.Opponent().Letter(), Reason: "resign"}
 	g.Phase = PhaseResult
+	g.Req, g.Away = nil, rules.Empty
 	g.stopClock(time.Now())
 	g.Seq++
 }

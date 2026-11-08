@@ -1,5 +1,5 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
-import { app, onGameUpdate } from '../store';
+import { app, onGameUpdate, type GameState } from '../store';
 import { send } from '../net';
 import { BoardRenderer } from './renderer';
 
@@ -12,8 +12,11 @@ const HOSHI: Record<number, number[][]> = {
 };
 const GUTTER = 24; // frame strip with coordinates
 
+/** A position shown instead of the game's own: while choosing the start move of an alternative game. */
+export type BoardView = { board: string; last: number; key: string };
+
 /** The board: wooden surface with grid (2D canvas), stones and effects (WebGL), hover and scoring marks (2D). */
-export function Board(props: { blurred: boolean }) {
+export function Board(props: { blurred: boolean; view?: BoardView | null; offer?: boolean }) {
   let host!: HTMLDivElement;
   let gridC!: HTMLCanvasElement;
   let glC!: HTMLCanvasElement;
@@ -24,6 +27,11 @@ export function Board(props: { blurred: boolean }) {
   const [sent, setSent] = createSignal(-1); // the point of a move sent to the server, until it answers
   const [error, setError] = createSignal('');
   const size = () => app.game?.size ?? 19;
+  // what the renderer draws: the game, or the chosen position (a new key makes it redraw from scratch)
+  const shown = (g: GameState): GameState => {
+    const v = props.view;
+    return v ? { ...g, id: `${g.id}:${v.key}`, board: v.board, last: v.last } : g;
+  };
   const geom = () => {
     const n = size();
     const cell = px() / (n - 1 + 2 * 0.72);
@@ -125,19 +133,20 @@ export function Board(props: { blurred: boolean }) {
     const ro = new ResizeObserver(() => { layout(); drawGrid(); drawUi(); });
     ro.observe(host);
     layout(); drawGrid();
-    if (app.game) renderer.update(app.game, null);
-    const off = onGameUpdate((g, e) => { renderer?.update(g, e); setSent(-1); drawUi(); });
+    if (app.game) renderer.update(shown(app.game), null);
+    const off = onGameUpdate((g, e) => { renderer?.update(shown(g), props.view ? null : e); setSent(-1); drawUi(); });
     onCleanup(() => { ro.disconnect(); off(); renderer?.destroy(); });
   });
 
   createEffect(() => { hover(); app.game?.phase; app.game?.seq; drawUi(); });
   createEffect(() => { size(); if (renderer) drawGrid(); });
+  createEffect(() => { const v = props.view; if (renderer && v && app.game) renderer.update(shown(app.game), null); });
 
   const cursor = () => (canPlay() ? 'pointer' : 'default');
 
   return (
     <div ref={host} class="board-host">
-      <div class="frame" style={{ width: `${px() + GUTTER * 2}px`, height: `${px() + GUTTER * 2}px` }}>
+      <div class="frame" classList={{ offer: !!props.offer }} style={{ width: `${px() + GUTTER * 2}px`, height: `${px() + GUTTER * 2}px` }}>
         <For each={Array.from({ length: size() }, (_, i) => i)}>
           {(i) => {
             const pos = () => GUTTER + geom().margin + i * geom().cell;

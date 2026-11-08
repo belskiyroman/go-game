@@ -19,11 +19,13 @@ type Conn struct {
 	out     chan []byte
 }
 
-// Invite: one outgoing invitation per player. The inviter's settings apply.
+// Invite: one outgoing invitation per player. The inviter's settings apply. An invitation with
+// Game set offers to continue that adjourned game.
 type Invite struct {
 	From, To string
 	Settings Settings
 	At       time.Time
+	Game     string
 }
 
 // Hub holds the room (lobby), invitations and games. One mutex keeps it simple: the load is tiny.
@@ -63,6 +65,10 @@ type inMsg struct {
 	Ready    bool     `json:"ready,omitempty"`
 	Accept   bool     `json:"accept,omitempty"`
 	Settings Settings `json:"settings,omitempty"`
+	Kind     string   `json:"kind,omitempty"`
+	Step     int      `json:"step,omitempty"`
+	Swap     bool     `json:"swap,omitempty"`
+	Game     string   `json:"game,omitempty"`
 }
 
 // Serve runs one WebSocket connection until it closes.
@@ -75,7 +81,17 @@ func (h *Hub) Serve(ctx context.Context, s *Session, ws *websocket.Conn) {
 	h.conns[s.ID][c] = true
 	h.sendTo(s.ID, map[string]any{"t": "me", "id": s.ID, "nick": s.Nick, "tag": s.Tag()})
 	if g := h.playerGame[s.ID]; g != nil {
-		h.sendGame(g, s.ID)
+		if g.Away != rules.Empty && g.Away == g.ColorOf(s.ID) {
+			// back before the opponent decided: the game goes on, with a full move
+			g.Away = rules.Empty
+			g.Deadline = time.Now().Add(g.moveTime())
+			g.Running = time.Now()
+			g.Seq++
+			h.armTimer(g)
+			h.broadcastGame(g, nil)
+		} else {
+			h.sendGame(g, s.ID)
+		}
 	}
 	h.broadcastLobby()
 	h.mu.Unlock()
@@ -164,6 +180,41 @@ func (h *Hub) busy(id string) bool {
 	return g != nil && g.Active()
 }
 
+func (h *Hub) online(id string) bool { return len(h.conns[id]) > 0 }
+
+// release takes the player out of their (finished) game.
+func (h *Hub) release(id string) {
+	if g := h.playerGame[id]; g != nil {
+		delete(h.playerGame, id)
+		h.forget(g)
+	}
+}
+
+// forget drops a finished game once no player looks at it any more.
+func (h *Hub) forget(g *Game) {
+	if g.Active() || g.Phase == PhaseAdjourned {
+		return
+	}
+	for _, pg := range h.playerGame {
+		if pg == g {
+			return
+		}
+	}
+	delete(h.games, g.ID)
+	h.gamesDirty = true
+}
+
+// gamePlayers are the players' current IDs that are in the game.
+func (h *Hub) gamePlayers(g *Game) []string {
+	ids := []string{}
+	for _, c := range []rules.Color{rules.Black, rules.White} {
+		if id := g.Players[c]; h.playerGame[id] == g {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 func (h *Hub) handle(s *Session, m inMsg) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -200,7 +251,30 @@ func (h *Hub) handle(s *Session, m inMsg) {
 			h.broadcastLobby()
 			return
 		}
-		h.startGame(inv)
+		if inv.Game != "" {
+			h.continueGame(inv, now)
+		} else {
+			h.startGame(inv)
+		}
+
+	case "resume": // offer the opponent to continue an adjourned game
+		g := h.games[m.Game]
+		if g == nil || g.Phase != PhaseAdjourned || h.invites[s.ID] != nil || h.busy(s.ID) {
+			h.broadcastLobby()
+			return
+		}
+		c := g.colorOfNick(s.Nick)
+		if c == rules.Empty {
+			return
+		}
+		opp := h.sessions.ByNick(g.Nicks[c.Opponent()])
+		if opp == nil || opp.ID == s.ID || !h.online(opp.ID) || h.busy(opp.ID) {
+			h.sendTo(s.ID, map[string]any{"t": "notice", "text": "Соперник сейчас не может продолжить партию"})
+			h.broadcastLobby()
+			return
+		}
+		h.invites[s.ID] = &Invite{From: s.ID, To: opp.ID, Settings: g.Settings, At: now, Game: g.ID}
+		h.broadcastLobby()
 
 	case "rematch":
 		g := h.playerGame[s.ID]
@@ -219,7 +293,7 @@ func (h *Hub) handle(s *Session, m inMsg) {
 
 	case "leave":
 		if g := h.playerGame[s.ID]; g != nil && !g.Active() {
-			delete(h.playerGame, s.ID)
+			h.release(s.ID)
 			h.gamesDirty = true
 			h.sendTo(s.ID, map[string]any{"t": "noGame"})
 		}
@@ -241,18 +315,184 @@ func (h *Hub) startGame(inv *Invite) {
 	}
 	g := NewGame(inv.Settings, black, white)
 	h.games[g.ID] = g
-	// both players are now busy: drop every invitation that involves them
-	for from, i := range h.invites {
-		if from == a.ID || from == b.ID || i.To == a.ID || i.To == b.ID {
-			delete(h.invites, from)
-		}
-	}
-	h.playerGame[a.ID] = g
-	h.playerGame[b.ID] = g
-	h.gamesDirty = true
+	h.enter(g, a.ID, b.ID)
 	h.armTimer(g)
 	h.sendGame(g, a.ID)
 	h.sendGame(g, b.ID)
+	h.broadcastLobby()
+}
+
+// enter puts both players into the game: they are busy now, so every invitation that involves
+// them is dropped.
+func (h *Hub) enter(g *Game, a, b string) {
+	for from, i := range h.invites {
+		if from == a || from == b || i.To == a || i.To == b {
+			delete(h.invites, from)
+		}
+	}
+	h.release(a)
+	h.release(b)
+	h.playerGame[a] = g
+	h.playerGame[b] = g
+	h.gamesDirty = true
+}
+
+// continueGame resumes an adjourned game. The players may have new IDs (the game is kept by
+// nickname), so they are refreshed.
+func (h *Hub) continueGame(inv *Invite, now time.Time) {
+	g := h.games[inv.Game]
+	a, b := h.sessions.ByID(inv.From), h.sessions.ByID(inv.To)
+	if g == nil || g.Phase != PhaseAdjourned || a == nil || b == nil {
+		delete(h.invites, inv.From)
+		h.broadcastLobby()
+		return
+	}
+	for _, s := range []*Session{a, b} {
+		c := g.colorOfNick(s.Nick)
+		if c == rules.Empty {
+			delete(h.invites, inv.From)
+			h.broadcastLobby()
+			return
+		}
+		g.Players[c], g.Nicks[c], g.Tags[c] = s.ID, s.Nick, s.Tag()
+	}
+	g.Continue(now)
+	h.enter(g, a.ID, b.ID)
+	h.armTimer(g)
+	h.sendGame(g, a.ID)
+	h.sendGame(g, b.ID)
+	h.broadcastLobby()
+}
+
+// adjournGame freezes the game and sends both players to the room.
+func (h *Hub) adjournGame(g *Game, now time.Time) {
+	ids := h.gamePlayers(g)
+	g.Adjourn(now)
+	h.armTimer(g)
+	for _, id := range ids {
+		delete(h.playerGame, id)
+		h.sendTo(id, map[string]any{"t": "noGame"})
+		h.sendTo(id, map[string]any{"t": "notice", "text": "Партия отложена. Продолжить её можно из «Моих партий»"})
+	}
+	h.gamesDirty = true
+	h.broadcastLobby()
+}
+
+// closeGame ends the game without counting; it is not counted in the score and is not kept.
+func (h *Hub) closeGame(g *Game) {
+	if g.timer != nil {
+		g.timer.Stop()
+	}
+	for _, id := range h.gamePlayers(g) {
+		delete(h.playerGame, id)
+		h.sendTo(id, map[string]any{"t": "noGame"})
+		h.sendTo(id, map[string]any{"t": "notice", "text": "Партия закрыта без подсчёта"})
+	}
+	delete(h.games, g.ID)
+	h.detachAlts(g)
+	h.gamesDirty = true
+	h.broadcastLobby()
+}
+
+// altsOf lists the alternatives of a main game, the oldest first.
+func (h *Hub) altsOf(mainID string) []*Game {
+	list := []*Game{}
+	for _, x := range h.games {
+		if x.Parent == mainID && mainID != "" {
+			list = append(list, x)
+		}
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].Created.Before(list[j].Created) })
+	return list
+}
+
+// detachAlts: when a main game ends or is closed, its alternatives become main games of their own.
+func (h *Hub) detachAlts(main *Game) {
+	for _, x := range h.altsOf(main.ID) {
+		x.Parent = ""
+		x.Seq++
+		h.broadcastGame(x, nil)
+	}
+}
+
+// openMain is the adjourned main game of an alternative, which the players may go back to.
+func (h *Hub) openMain(alt *Game) *Game {
+	if m := h.games[alt.Parent]; m != nil && alt.Parent != "" && m.Phase == PhaseAdjourned {
+		return m
+	}
+	return nil
+}
+
+// backToMain closes the alternative (not counted) and continues its main game.
+func (h *Hub) backToMain(alt *Game, now time.Time) {
+	main := h.openMain(alt)
+	ids := h.gamePlayers(alt)
+	if main == nil || len(ids) != 2 {
+		return
+	}
+	if alt.timer != nil {
+		alt.timer.Stop()
+	}
+	delete(h.games, alt.ID)
+	for _, id := range ids {
+		delete(h.playerGame, id)
+		if s := h.sessions.ByID(id); s != nil { // the players' IDs may be newer than the main game's
+			if c := main.colorOfNick(s.Nick); c != rules.Empty {
+				main.Players[c], main.Nicks[c], main.Tags[c] = s.ID, s.Nick, s.Tag()
+			}
+		}
+	}
+	main.Continue(now)
+	h.enter(main, ids[0], ids[1])
+	h.armTimer(main)
+	for _, id := range ids {
+		h.sendGame(main, id)
+		h.sendTo(id, map[string]any{"t": "notice", "text": "Альтернативный розыгрыш закрыт, продолжается основная партия"})
+	}
+	h.broadcastLobby()
+}
+
+// promote makes the alternative the main game: the old main game is closed without counting and
+// its other alternatives now belong to this one.
+func (h *Hub) promote(alt *Game) {
+	if main := h.games[alt.Parent]; main != nil {
+		if main.timer != nil {
+			main.timer.Stop()
+		}
+		delete(h.games, main.ID)
+		for _, x := range h.altsOf(main.ID) {
+			if x != alt {
+				x.Parent = alt.ID
+			}
+		}
+	}
+	alt.Parent, alt.From = "", 0
+	alt.Seq++
+	h.gamesDirty = true
+	h.broadcastGame(alt, nil)
+	for _, id := range h.gamePlayers(alt) {
+		h.sendTo(id, map[string]any{"t": "notice", "text": "Эта партия теперь основная"})
+	}
+	h.broadcastLobby()
+}
+
+// branchGame moves both players into an alternative of the game; an unfinished game is adjourned.
+func (h *Hub) branchGame(g *Game, now time.Time) {
+	ids := h.gamePlayers(g)
+	alt := g.Branch(now)
+	if g.Active() {
+		g.Adjourn(now)
+		h.armTimer(g)
+	}
+	h.games[alt.ID] = alt
+	for _, id := range ids {
+		h.playerGame[id] = alt
+	}
+	h.forget(g)
+	h.gamesDirty = true
+	for _, id := range ids {
+		h.sendGame(alt, id)
+	}
 	h.broadcastLobby()
 }
 
@@ -297,6 +537,87 @@ func (h *Hub) handleGame(s *Session, m inMsg, now time.Time) {
 		g.AgreeScore(c)
 	case "playOn":
 		g.PlayOn(now)
+
+	case "ask":
+		oppID := g.Players[c.Opponent()]
+		if m.Kind == ReqAlt && len(h.altsOf(g.ID)) >= MaxAlts {
+			h.sendTo(s.ID, map[string]any{"t": "notice", "text": "У партии уже 5 альтернативных розыгрышей"})
+			return
+		}
+		if m.Kind == ReqBack && h.openMain(g) == nil {
+			h.sendTo(s.ID, map[string]any{"t": "notice", "text": "Основной партии больше нет"})
+			return
+		}
+		if m.Kind == ReqAdjourn && g.Active() && !h.online(oppID) {
+			h.adjournGame(g, now) // nobody to ask: the opponent is offline
+			return
+		}
+		if g.Ask(c, m.Kind) != nil {
+			return
+		}
+	case "askCancel":
+		g.CancelAsk(c)
+	case "askAnswer":
+		r := g.Req
+		if r == nil || r.From == c || c == rules.Empty {
+			return
+		}
+		g.Req = nil
+		g.Seq++
+		if !m.Accept {
+			h.sendTo(g.Players[r.From], map[string]any{"t": "notice", "text": s.Nick + " отказался"})
+			break
+		}
+		switch r.Kind {
+		case ReqAlt:
+			h.branchGame(g, now)
+		case ReqAdjourn:
+			h.adjournGame(g, now)
+		case ReqClose:
+			h.closeGame(g)
+		case ReqBack:
+			h.backToMain(g, now)
+		case ReqPromote:
+			h.promote(g)
+		}
+		return
+
+	case "propose":
+		if g.Propose(c, m.Step, m.Swap) != nil {
+			h.sendGame(g, s.ID)
+			return
+		}
+	case "proposeCancel":
+		if g.Proposal == nil || g.Proposal.From != c {
+			return
+		}
+		g.DropProposal()
+	case "proposeAnswer":
+		p := g.Proposal
+		if p == nil || p.From == c {
+			return
+		}
+		if !m.Accept {
+			g.DropProposal()
+			h.sendTo(g.Players[p.From], map[string]any{"t": "notice", "text": s.Nick + " отказался от этой точки старта"})
+			break
+		}
+		if g.AcceptProposal(c, now) != nil {
+			return
+		}
+		event = map[string]any{"kind": "started"}
+
+	case "awayScore":
+		if g.Away != c.Opponent() {
+			return
+		}
+		g.ScoreAway()
+	case "awayAdjourn":
+		if g.Away != c.Opponent() {
+			return
+		}
+		h.adjournGame(g, now)
+		return
 	default:
 		return
 	}
@@ -312,7 +633,7 @@ func (h *Hub) armTimer(g *Game) {
 	if g.timer != nil {
 		g.timer.Stop()
 	}
-	if g.Phase != PhasePlay && g.Phase != PhaseScoring {
+	if (g.Phase != PhasePlay && g.Phase != PhaseScoring) || g.Away != rules.Empty {
 		return
 	}
 	d := time.Until(g.Deadline) + 50*time.Millisecond
@@ -321,7 +642,17 @@ func (h *Hub) armTimer(g *Game) {
 		defer h.mu.Unlock()
 		turn := g.Turn
 		phase := g.Phase
-		if g.Timeout(time.Now()) {
+		now := time.Now()
+		if phase == PhasePlay && !now.Before(g.Deadline) && !h.online(g.Players[turn]) {
+			// the player to move is gone and out of time: the opponent decides (count or adjourn)
+			g.Away = turn
+			g.PauseReq = rules.Empty
+			g.stopClock(now) // the game clock waits too
+			g.Seq++
+			h.broadcastGame(g, nil)
+			return
+		}
+		if g.Timeout(now) {
 			var event map[string]any
 			if phase == PhasePlay {
 				event = map[string]any{"kind": "pass", "color": turn.Letter(), "timeout": true}
@@ -347,6 +678,7 @@ func (h *Hub) broadcastGame(g *Game, event map[string]any) {
 			w = rules.White
 		}
 		h.results.Add(g.Nicks[w], g.Nicks[w.Opponent()])
+		h.detachAlts(g)
 	}
 	for _, c := range []rules.Color{rules.Black, rules.White} {
 		id := g.Players[c]
@@ -374,6 +706,17 @@ func (h *Hub) sendGame(g *Game, sessionID string, event ...map[string]any) {
 		"played":    g.PlayedTime(now).Milliseconds(), "playedRunning": !g.Running.IsZero(),
 		"moves": len(g.Moves),
 		"h2h":   h.h2h(g.Nicks[rules.Black], g.Nicks[rules.White]),
+		"away":  g.Away.Letter(), "parent": g.Parent, "from": g.From,
+		"alts": len(h.altsOf(mainOf(g))), "mainOpen": h.openMain(g) != nil,
+	}
+	if g.Req != nil {
+		st["req"] = map[string]any{"kind": g.Req.Kind, "from": g.Req.From.Letter()}
+	}
+	if g.Phase == PhaseSetup {
+		st["source"] = encodeMoves(g.Source)
+		if p := g.Proposal; p != nil {
+			st["proposal"] = map[string]any{"from": p.From.Letter(), "step": p.Step, "swap": p.Swap}
+		}
 	}
 	if g.Phase == PhaseScoring || g.Phase == PhaseResult {
 		dead := []int{}
@@ -436,20 +779,30 @@ func (h *Hub) broadcastLobby() {
 			continue
 		}
 		vs := func(nick string) [2]int { a, b := h.results.Score(me.Nick, nick); return [2]int{a, b} }
+		card := func(inv *Invite) any {
+			if g := h.games[inv.Game]; g != nil {
+				return h.gameCard(g, me.Nick)
+			}
+			return nil
+		}
 		var outgoing any
 		if inv := h.invites[id]; inv != nil {
 			to := h.sessions.ByID(inv.To)
 			if to != nil {
-				outgoing = map[string]any{"to": inv.To, "nick": to.Nick, "tag": to.Tag(), "settings": inv.Settings, "h2h": vs(to.Nick)}
+				outgoing = map[string]any{"to": inv.To, "nick": to.Nick, "tag": to.Tag(), "settings": inv.Settings, "h2h": vs(to.Nick), "game": card(inv)}
 			}
 		}
 		incoming := []map[string]any{}
 		for _, inv := range h.invites {
 			if inv.To == id {
 				if from := h.sessions.ByID(inv.From); from != nil {
-					incoming = append(incoming, map[string]any{"from": inv.From, "nick": from.Nick, "tag": from.Tag(), "settings": inv.Settings, "h2h": vs(from.Nick)})
+					incoming = append(incoming, map[string]any{"from": inv.From, "nick": from.Nick, "tag": from.Tag(), "settings": inv.Settings, "h2h": vs(from.Nick), "game": card(inv)})
 				}
 			}
+		}
+		games := []map[string]any{}
+		for _, g := range h.myGames(me.Nick) {
+			games = append(games, h.gameCard(g, me.Nick))
 		}
 		players := make([]player, 0, len(all))
 		for _, p := range all {
@@ -460,7 +813,7 @@ func (h *Hub) broadcastLobby() {
 		}
 		h.sendTo(id, map[string]any{
 			"t": "lobby", "players": players, "online": len(all),
-			"settings": h.settingsOf(id), "outgoing": outgoing, "incoming": incoming,
+			"settings": h.settingsOf(id), "outgoing": outgoing, "incoming": incoming, "games": games,
 		})
 	}
 }
@@ -469,4 +822,53 @@ func (h *Hub) broadcastLobby() {
 func (h *Hub) h2h(black, white string) map[string]int {
 	b, w := h.results.Score(black, white)
 	return map[string]int{"b": b, "w": w}
+}
+
+// myGames are the player's unfinished games: the adjourned ones and the one being played.
+func (h *Hub) myGames(nick string) []*Game {
+	list := []*Game{}
+	for _, g := range h.games {
+		if (g.Phase == PhaseAdjourned || g.Active()) && g.colorOfNick(nick) != rules.Empty {
+			list = append(list, g)
+		}
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].Created.Before(list[j].Created) })
+	return list
+}
+
+// adjournedCount: how many of the games can be continued.
+func adjournedCount(list []*Game) int {
+	n := 0
+	for _, g := range list {
+		if g.Phase == PhaseAdjourned {
+			n++
+		}
+	}
+	return n
+}
+
+// gameCard describes an adjourned game for "My games" and for an invitation to continue it.
+func (h *Hub) gameCard(g *Game, nick string) map[string]any {
+	c := g.colorOfNick(nick)
+	opp := g.Nicks[c.Opponent()]
+	available := false
+	if s := h.sessions.ByNick(opp); s != nil && h.online(s.ID) && !h.busy(s.ID) {
+		available = true
+	}
+	board, last, moves, turn := g.position()
+	return map[string]any{
+		"id": g.ID, "you": c.Letter(), "opp": opp, "size": g.Settings.Size, "komi": g.Settings.Komi, "moveTime": g.Settings.MoveTime,
+		"board": board, "last": last, "moves": moves, "turn": turn.Letter(),
+		"alt": g.Parent != "", "from": g.From, "setup": g.Resume == PhaseSetup || g.Phase == PhaseSetup,
+		"main": mainOf(g), "current": g.Active(),
+		"adjournedAt": g.AdjournedAt.UnixMilli(), "available": available,
+	}
+}
+
+// mainOf is the main game of a game's row in "My games": its parent, or the game itself.
+func mainOf(g *Game) string {
+	if g.Parent != "" {
+		return g.Parent
+	}
+	return g.ID
 }

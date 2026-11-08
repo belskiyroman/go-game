@@ -1,3 +1,4 @@
+import { reconcile } from 'solid-js/store';
 import { app, setApp, emitGameUpdate, type GameEvent, type GameState, type Me } from './store';
 
 // ngrok's free plan shows a warning page to browsers; this header lets API calls through it.
@@ -36,11 +37,12 @@ export function connect() {
     try { m = JSON.parse(ev.data); } catch { return; }
     switch (m.t) {
       case 'me': setApp('me', { id: m.id, nick: m.nick, tag: m.tag }); break;
-      case 'lobby': setApp('lobby', { players: m.players, online: m.online, settings: m.settings, outgoing: m.outgoing, incoming: m.incoming }); break;
+      case 'lobby': setApp('lobby', { players: m.players, online: m.online, settings: m.settings, outgoing: m.outgoing, incoming: m.incoming, games: m.games ?? [] }); break;
       case 'game': {
         const g = m.game as GameState;
         setApp('clockOffset', g.serverNow - Date.now());
-        setApp('game', g);
+        if (app.game?.id !== g.id) setApp('view', 'main'); // a new game (or a continued one) opens at once
+        setApp('game', reconcile(g)); // replace, not merge: fields that are gone (a request, a proposal) must go
         emitGameUpdate(g, (m.event as GameEvent) ?? null);
         break;
       }
