@@ -16,7 +16,7 @@ const GUTTER = 24; // frame strip with coordinates
 export type BoardView = { board: string; last: number; key: string };
 
 /** The board: wooden surface with grid (2D canvas), stones and effects (WebGL), hover and scoring marks (2D). */
-export function Board(props: { blurred: boolean; view?: BoardView | null; offer?: boolean }) {
+export function Board(props: { blurred: boolean; view?: BoardView | null; offer?: boolean; picking?: boolean }) {
   let host!: HTMLDivElement;
   let gridC!: HTMLCanvasElement;
   let glC!: HTMLCanvasElement;
@@ -165,7 +165,7 @@ export function Board(props: { blurred: boolean; view?: BoardView | null; offer?
 
   return (
     <div ref={host} class="board-host">
-      <div class="frame" classList={{ offer: !!props.offer }} style={{ width: `${px() + GUTTER * 2}px`, height: `${px() + GUTTER * 2}px` }}>
+      <div class="frame" classList={{ offer: !!props.offer, picking: !!props.picking && !props.offer }} style={{ width: `${px() + GUTTER * 2}px`, height: `${px() + GUTTER * 2}px` }}>
         <For each={Array.from({ length: size() }, (_, i) => i)}>
           {(i) => {
             const pos = () => GUTTER + geom().margin + i * geom().cell;

@@ -130,7 +130,7 @@ export function Game() {
       />
       <main class="game">
         <div class="board-col">
-          <Board blurred={g().phase === 'paused'} view={view()} offer={!!proposal()} />
+          <Board blurred={g().phase === 'paused'} view={view()} offer={!!proposal()} picking={g().phase === 'setup'} />
           <Show when={startNote()}>
             <div class="pass-note" role="status">Игра началась</div>
           </Show>
