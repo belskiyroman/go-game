@@ -15,7 +15,7 @@ const adjourned = () => (app.lobby?.games ?? []).filter((g) => !g.current).lengt
  * head-to-head score) and on the right `who` (in a game, the game time; elsewhere «Вы: nick"),
  * the buttons and `corner` (the side-panel button).
  */
-export function Topbar(props: { info?: string; left?: JSX.Element; center?: JSX.Element; who?: JSX.Element; corner?: JSX.Element }) {
+export function Topbar(props: { info?: string; left?: JSX.Element; center?: JSX.Element; who?: JSX.Element; corner?: JSX.Element; inGame?: boolean }) {
   return (
     <header class="topbar">
       <div class="tb-left">
@@ -39,9 +39,12 @@ export function Topbar(props: { info?: string; left?: JSX.Element; center?: JSX.
         <Show when={app.view === 'games'}>
           <button class="btn small" onClick={() => setApp('view', 'main')}>{app.game ? 'К партии' : 'Комната'}</button>
         </Show>
-        <button class="btn small" classList={{ on: app.view === 'games' }} aria-pressed={app.view === 'games'} onClick={() => setApp('view', 'games')}>
-          Мои партии<Show when={adjourned() > 0}><span class="count">{adjourned()}</span></Show>
-        </button>
+        {/* not in the game screen: there the header holds the game's own information */}
+        <Show when={!props.inGame}>
+          <button class="btn small" classList={{ on: app.view === 'games' }} aria-pressed={app.view === 'games'} onClick={() => setApp('view', 'games')}>
+            Мои партии<Show when={adjourned() > 0}><span class="count">{adjourned()}</span></Show>
+          </button>
+        </Show>
         {props.corner}
         </span>
       </nav>
