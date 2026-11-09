@@ -111,7 +111,18 @@ export function Game() {
 
   return (
     <div>
-      <Topbar info={`${g().size}×${g().size} · коми ${komiLabel(g().komi)} · ${timeLabel(g().moveTime)} на ход`} />
+      <Topbar
+        info={`${g().size}×${g().size} · коми ${komiLabel(g().komi)} · ${timeLabel(g().moveTime)} на ход`}
+        who={
+          <span class="h2h-head" role="img" aria-label={`Счёт встреч: ${nickOf('b')} ${g().h2h?.b ?? 0}, ${nickOf('w')} ${g().h2h?.w ?? 0}`}>
+            <span class="h2h-nick">{nickOf('b')}</span>
+            <span class="mini b" aria-hidden="true">火</span>
+            <strong>{g().h2h?.b ?? 0} : {g().h2h?.w ?? 0}</strong>
+            <span class="mini w" aria-hidden="true">冰</span>
+            <span class="h2h-nick">{nickOf('w')}</span>
+          </span>
+        }
+      />
       <main class="game">
         <div class="board-col">
           <Board blurred={g().phase === 'paused'} view={view()} offer={!!proposal()} />
@@ -142,15 +153,6 @@ export function Game() {
           <div class="gameclock" aria-label="Время партии без пауз">
             <span class="muted">Время партии</span>
             <strong>{fmtLong(played())}</strong>
-          </div>
-          <div class="gameclock h2h-box" aria-label={`Счёт встреч: ${nickOf('b')} ${g().h2h?.b ?? 0}, ${nickOf('w')} ${g().h2h?.w ?? 0}`}>
-            <div class="h2h-row" aria-hidden="true">
-              <span class="h2h-nick" style={{ 'text-align': 'right' }}>{nickOf('b')}</span>
-              <strong class="h2h-score">
-                <span class="mini b">火</span>{g().h2h?.b ?? 0} : {g().h2h?.w ?? 0}<span class="mini w">冰</span>
-              </strong>
-              <span class="h2h-nick">{nickOf('w')}</span>
-            </div>
           </div>
           {/* the player cards (move clocks, prisoners) are hidden while counting and on the result */}
           <For each={g().phase === 'scoring' || g().phase === 'result' ? [] : (['b', 'w'] as Side[])}>
