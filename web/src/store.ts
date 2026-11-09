@@ -58,12 +58,11 @@ type AppState = {
   lobby: Lobby | null;
   game: GameState | null;
   clockOffset: number;       // server time minus local time, ms
-  notice: string;
   view: 'main' | 'games';    // "My games" opened over the room or the game
 };
 
 export const [app, setApp] = createStore<AppState>({
-  me: null, checked: false, renaming: false, connected: false, lobby: null, game: null, clockOffset: 0, notice: '', view: 'main',
+  me: null, checked: false, renaming: false, connected: false, lobby: null, game: null, clockOffset: 0, view: 'main',
 });
 
 // Game events go to the board renderer in order; it consumes them by sequence.

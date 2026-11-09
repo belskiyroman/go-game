@@ -241,7 +241,6 @@ func (h *Hub) handle(s *Session, m inMsg) {
 	case "declineInvite":
 		if inv := h.invites[m.From]; inv != nil && inv.To == s.ID {
 			delete(h.invites, m.From)
-			h.sendTo(m.From, map[string]any{"t": "notice", "text": s.Nick + " отклонил приглашение"})
 		}
 		h.broadcastLobby()
 
@@ -269,7 +268,6 @@ func (h *Hub) handle(s *Session, m inMsg) {
 		}
 		opp := h.sessions.ByNick(g.Nicks[c.Opponent()])
 		if opp == nil || opp.ID == s.ID || !h.online(opp.ID) || h.busy(opp.ID) {
-			h.sendTo(s.ID, map[string]any{"t": "notice", "text": "Соперник сейчас не может продолжить партию"})
 			h.broadcastLobby()
 			return
 		}
@@ -372,7 +370,6 @@ func (h *Hub) adjournGame(g *Game, now time.Time) {
 	for _, id := range ids {
 		delete(h.playerGame, id)
 		h.sendTo(id, map[string]any{"t": "noGame"})
-		h.sendTo(id, map[string]any{"t": "notice", "text": "Партия отложена. Продолжить её можно из «Моих партий»"})
 	}
 	h.gamesDirty = true
 	h.broadcastLobby()
@@ -386,7 +383,6 @@ func (h *Hub) closeGame(g *Game) {
 	for _, id := range h.gamePlayers(g) {
 		delete(h.playerGame, id)
 		h.sendTo(id, map[string]any{"t": "noGame"})
-		h.sendTo(id, map[string]any{"t": "notice", "text": "Партия закрыта без подсчёта"})
 	}
 	delete(h.games, g.ID)
 	h.detachAlts(g)
@@ -447,7 +443,6 @@ func (h *Hub) backToMain(alt *Game, now time.Time) {
 	h.armTimer(main)
 	for _, id := range ids {
 		h.sendGame(main, id)
-		h.sendTo(id, map[string]any{"t": "notice", "text": "Альтернативный розыгрыш закрыт, продолжается основная партия"})
 	}
 	h.broadcastLobby()
 }
@@ -470,9 +465,6 @@ func (h *Hub) promote(alt *Game) {
 	alt.Seq++
 	h.gamesDirty = true
 	h.broadcastGame(alt, nil)
-	for _, id := range h.gamePlayers(alt) {
-		h.sendTo(id, map[string]any{"t": "notice", "text": "Эта партия теперь основная"})
-	}
 	h.broadcastLobby()
 }
 
@@ -549,11 +541,9 @@ func (h *Hub) handleGame(s *Session, m inMsg, now time.Time) {
 	case "ask":
 		oppID := g.Players[c.Opponent()]
 		if m.Kind == ReqAlt && len(h.altsOf(g.ID)) >= MaxAlts {
-			h.sendTo(s.ID, map[string]any{"t": "notice", "text": "У партии уже 5 альтернативных розыгрышей"})
 			return
 		}
 		if m.Kind == ReqBack && h.openMain(g) == nil {
-			h.sendTo(s.ID, map[string]any{"t": "notice", "text": "Основной партии больше нет"})
 			return
 		}
 		if m.Kind == ReqAdjourn && g.Active() && !h.online(oppID) {
@@ -573,7 +563,6 @@ func (h *Hub) handleGame(s *Session, m inMsg, now time.Time) {
 		g.Req = nil
 		g.Seq++
 		if !m.Accept {
-			h.sendTo(g.Players[r.From], map[string]any{"t": "notice", "text": s.Nick + " отказался"})
 			break
 		}
 		switch r.Kind {
@@ -607,7 +596,6 @@ func (h *Hub) handleGame(s *Session, m inMsg, now time.Time) {
 		}
 		if !m.Accept {
 			g.DropProposal()
-			h.sendTo(g.Players[p.From], map[string]any{"t": "notice", "text": s.Nick + " отказался от этой точки старта"})
 			break
 		}
 		if g.AcceptProposal(c, now) != nil {

@@ -47,7 +47,6 @@ export function connect() {
         break;
       }
       case 'noGame': setApp('game', null); break;
-      case 'notice': flash(m.text); break;
       case 'error': break;
     }
   };
@@ -69,12 +68,6 @@ export function send(msg: Record<string, unknown>) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
 
-let noticeTimer: number | undefined;
-export function flash(text: string) {
-  setApp('notice', text);
-  clearTimeout(noticeTimer);
-  noticeTimer = window.setTimeout(() => setApp('notice', ''), 3500);
-}
 
 export const isMyGameTurn = () => {
   const g = app.game;

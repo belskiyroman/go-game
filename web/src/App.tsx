@@ -86,7 +86,6 @@ export function App() {
           </div>
         )}
       </Show>
-      <Show when={app.notice}><div class="notice" role="status">{app.notice}</div></Show>
     </>
   );
 }
