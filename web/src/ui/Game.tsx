@@ -157,7 +157,8 @@ export function Game() {
               <span class="h2h-nick">{nickOf('w')}</span>
             </div>
           </div>
-          <For each={['b', 'w'] as Side[]}>
+          {/* the player cards (move clocks, prisoners) are hidden while counting and on the result */}
+          <For each={g().phase === 'scoring' || g().phase === 'result' ? [] : (['b', 'w'] as Side[])}>
             {(s) => (
               <section class="player" classList={{ active: active(s) }} aria-label={`${nickOf(s)}, ${s === 'b' ? 'чёрные' : 'белые'}`}>
                 <div style={{ display: 'flex', 'align-items': 'center', gap: '14px' }}>
