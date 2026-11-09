@@ -184,7 +184,7 @@ export function Game() {
           </Show>
         </div>
 
-        <aside class="side" hidden={solo()}>
+        <aside class="side" classList={{ collapsed: solo() }} aria-hidden={solo()} inert={solo()}>
           <Show when={g().parent && g().phase !== 'setup'}>
             <div class="altline"><span class="chip alt">Альтернативный розыгрыш</span><span class="muted">с хода {g().from}</span></div>
           </Show>
