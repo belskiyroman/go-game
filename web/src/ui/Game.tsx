@@ -17,7 +17,6 @@ const fmtLong = (ms: number) => {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = String(s % 60).padStart(2, '0');
   return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${String(m).padStart(2, '0')}:${sec}`;
 };
-const sideName = (s: Side) => (s === 'b' ? 'чёрных' : 'белых');
 
 export function Game() {
   const [now, setNow] = createSignal(serverNow());
@@ -209,6 +208,10 @@ export function Game() {
                   <Show when={g().phase === 'paused'}>
                     <span style={{ color: g().ready[s] ? 'var(--ok)' : '#c9c3ba', 'font-weight': 700 }}>{g().ready[s] ? 'Готов продолжить' : 'Не готов'}</span>
                   </Show>
+                  {/* the last move of this player was a pass: one more pass by the other ends the play */}
+                  <Show when={g().phase === 'play' && g().passes === 1 && g().turn !== s}>
+                    <span class="pass-mark" title="Второй пас подряд завершит партию">ПАС</span>
+                  </Show>
                 </div>
               </section>
             )}
@@ -216,12 +219,6 @@ export function Game() {
           </Show>
 
           <Show when={g().phase === 'play'}>
-            {/* whose move it is shows on the player cards; only the warning after a pass stays */}
-            <Show when={g().passes === 1}>
-              <div style={{ padding: '12px 14px', 'border-radius': '12px', background: '#1f2225', border: '1px solid #33383d', color: '#c9c3ba' }}>
-                Пас {sideName(g().turn === 'b' ? 'w' : 'b')}. Второй пас подряд завершит партию
-              </div>
-            </Show>
             <Show when={g().pauseReq === me()}>
               <div class="banner">
                 <div style={{ display: 'flex', 'align-items': 'center', gap: '10px' }}><div class="spinner" /><strong>Ждём ответа на паузу</strong></div>
