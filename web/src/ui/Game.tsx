@@ -135,10 +135,19 @@ export function Game() {
             <span class="mini w" aria-hidden="true">冰</span>
             <span class="h2h-nick">{nickOf('w')}</span>
           </span>
-          <Show when={g().phase === 'play'}>
-            <button class="btn small" aria-pressed={panelOff()} onClick={togglePanel}>{panelOff() ? 'Показать панель' : 'Скрыть панель'}</button>
-          </Show>
           </>
+        }
+        corner={
+          <Show when={g().phase === 'play'}>
+            {/* the last item in the corner, with a fixed size: it stays in place when pressed */}
+            <button class="btn small icon" classList={{ on: !panelOff() }} aria-pressed={!panelOff()} aria-label={panelOff() ? 'Показать панель' : 'Скрыть панель'} title={panelOff() ? 'Показать панель' : 'Скрыть панель'} onClick={togglePanel}>
+              <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+                <rect x="2" y="3" width="16" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6" />
+                <rect x="12" y="3.8" width="5.2" height="12.4" rx="1.6" fill="currentColor" opacity={panelOff() ? 0 : 0.85} />
+                <line x1="12" y1="3.5" x2="12" y2="16.5" stroke="currentColor" stroke-width="1.6" />
+              </svg>
+            </button>
+          </Show>
         }
       />
       <main class="game" classList={{ solo: solo() }}>
