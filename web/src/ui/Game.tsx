@@ -114,6 +114,10 @@ export function Game() {
       <Topbar
         info={`${g().size}×${g().size} · коми ${komiLabel(g().komi)} · ${timeLabel(g().moveTime)} на ход`}
         who={
+          <>
+          <Show when={g().phase !== 'setup'}>
+            <span class="game-time" aria-label="Время партии без пауз"><span class="muted">Время партии</span><strong>{fmtLong(played())}</strong></span>
+          </Show>
           <span class="h2h-head" role="img" aria-label={`Счёт встреч: ${nickOf('b')} ${g().h2h?.b ?? 0}, ${nickOf('w')} ${g().h2h?.w ?? 0}`}>
             <span class="h2h-nick">{nickOf('b')}</span>
             <span class="mini b" aria-hidden="true">火</span>
@@ -121,6 +125,7 @@ export function Game() {
             <span class="mini w" aria-hidden="true">冰</span>
             <span class="h2h-nick">{nickOf('w')}</span>
           </span>
+          </>
         }
       />
       <main class="game">
@@ -150,10 +155,6 @@ export function Game() {
             <div class="altline"><span class="chip alt">Альтернативный розыгрыш</span><span class="muted">с хода {g().from}</span></div>
           </Show>
           <Show when={g().phase !== 'setup'}>
-          <div class="gameclock" aria-label="Время партии без пауз">
-            <span class="muted">Время партии</span>
-            <strong>{fmtLong(played())}</strong>
-          </div>
           {/* the player cards (move clocks, prisoners) are hidden while counting and on the result */}
           <For each={g().phase === 'scoring' || g().phase === 'result' ? [] : (['b', 'w'] as Side[])}>
             {(s) => (
