@@ -16,7 +16,9 @@ export function Topbar(props: { info?: string; who?: JSX.Element; corner?: JSX.E
       <div class="brand">
         <span aria-hidden="true" style={{ display: 'flex' }}><span class="mini b">火</span><span class="mini w" style={{ 'margin-left': '-6px' }}>冰</span></span>
         Го онлайн
-        <span class="muted" style={{ 'font-family': 'Manrope', 'font-weight': 500, 'font-size': '15px', 'margin-left': '8px' }}>{props.info ?? 'Комната без рейтинга'}</span>
+        <Show when={props.info !== ''}>
+          <span class="muted" style={{ 'font-family': 'Manrope', 'font-weight': 500, 'font-size': '15px', 'margin-left': '8px' }}>{props.info ?? 'Комната без рейтинга'}</span>
+        </Show>
       </div>
       <nav style={{ display: 'flex', 'align-items': 'center', gap: '10px' }} aria-label="Разделы">
         <Show when={props.who} fallback={<span class="muted" style={{ 'font-size': '15px', 'margin-right': '4px' }}>Вы: <strong style={{ color: 'var(--text)' }}>{app.me?.nick}</strong></span>}>

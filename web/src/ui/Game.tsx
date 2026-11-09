@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from 'solid-js';
-import { app, komiLabel, onGameUpdate, serverNow, timeLabel, type Side } from '../store';
+import { app, onGameUpdate, serverNow, type Side } from '../store';
 import { send } from '../net';
 import { Board, type BoardView } from '../board/Board';
 import { replay } from '../replay';
@@ -122,11 +122,19 @@ export function Game() {
   return (
     <div>
       <Topbar
-        info={`${g().size}×${g().size} · коми ${komiLabel(g().komi)} · ${timeLabel(g().moveTime)} на ход`}
+        info=""
         who={
           <>
+          {/* the panel is hidden: the move clock of the player to move only */}
+          <Show when={solo()}>
+            <span class="mini-clock" classList={{ low: timeLeft(g().turn) <= 30000 }} aria-label={`${nickOf(g().turn)}: ${fmt(timeLeft(g().turn))} на ход`}>
+              <span class="mc-time">{fmt(timeLeft(g().turn))}</span>
+              <span class="mc-nick">{nickOf(g().turn)}</span>
+              <span class={`mini ${g().turn}`} aria-hidden="true">{g().turn === 'b' ? '火' : '冰'}</span>
+            </span>
+          </Show>
           <Show when={g().phase !== 'setup'}>
-            <span class="game-time" aria-label="Время партии без пауз"><span class="muted">Время партии</span><strong>{fmtLong(played())}</strong></span>
+            <span class="game-time" aria-label="Время партии без пауз"><span>Время партии</span><span class="gt-num">{fmtLong(played())}</span></span>
           </Show>
           <span class="h2h-head" role="img" aria-label={`Счёт встреч: ${nickOf('b')} ${g().h2h?.b ?? 0}, ${nickOf('w')} ${g().h2h?.w ?? 0}`}>
             <span class="h2h-nick">{nickOf('b')}</span>
@@ -151,20 +159,6 @@ export function Game() {
         }
       />
       <main class="game" classList={{ solo: solo() }}>
-        {/* the panel is hidden: the move clocks stay as two small boxes in a row above the board */}
-        <Show when={solo()}>
-          <div class="mini-clocks">
-            <For each={['b', 'w'] as Side[]}>
-              {(s) => (
-                <div class="mini-clock" classList={{ active: active(s), low: active(s) && timeLeft(s) <= 30000 }} aria-label={`${nickOf(s)}: ${fmt(timeLeft(s))} на ход`}>
-                  <span class="mc-time">{fmt(timeLeft(s))}</span>
-                  <span class="mc-nick">{nickOf(s)}</span>
-                  <span class={`mini ${s}`} aria-hidden="true">{s === 'b' ? '火' : '冰'}</span>
-                </div>
-              )}
-            </For>
-          </div>
-        </Show>
         <div class="board-col">
           <Board blurred={g().phase === 'paused'} view={view()} offer={!!proposal()} picking={g().phase === 'setup'} />
           <Show when={startNote()}>

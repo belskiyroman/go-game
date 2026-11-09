@@ -156,18 +156,14 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 .h2h-head strong { font-size: 17px; font-variant-numeric: tabular-nums; }
 .h2h-head .h2h-nick { max-width: 140px; }
 /* the game time in the game header */
-.game-time { display: inline-flex; align-items: baseline; gap: 8px; margin-right: 14px; font-size: 15px; }
-.game-time strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+.game-time { display: inline-flex; align-items: baseline; gap: 8px; margin-right: 14px; font-size: 15px; color: var(--muted); }
+.game-time .gt-num { font-variant-numeric: tabular-nums; }
 /* the side panel hidden: the board takes the room it had */
-.game.solo { flex-direction: column; flex-wrap: nowrap; align-items: center; gap: 12px; }
-.game.solo .board-col { flex: none; width: min(100%, calc(100vh - 170px)); max-width: none; max-height: none; }
-/* the move clocks while the panel is hidden */
-.mini-clocks { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-.mini-clock { display: inline-flex; align-items: center; gap: 10px; padding: 6px 10px 6px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); }
-.mini-clock .mc-time { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; color: #8f9397; }
+.game.solo .board-col { max-width: calc(100vh - 110px); }
+/* the move clock of the player to move, in the header while the panel is hidden */
+.mini-clock { display: inline-flex; align-items: center; gap: 10px; padding: 4px 10px 4px 12px; margin-right: 14px; border-radius: 10px; border: 1px solid var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; white-space: nowrap; flex-shrink: 0; }
+.mini-clock .mc-time { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .mini-clock .mc-nick { font-weight: 700; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mini-clock.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-.mini-clock.active .mc-time { color: var(--text); }
 .mini-clock.low .mc-time { color: var(--danger); }
 .side[hidden] { display: none; }
 /* header items keep their text on one line and wrap as whole items on narrow screens */
@@ -175,10 +171,3 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 .topbar .btn, .game-time, .h2h-head { white-space: nowrap; flex-shrink: 0; }
 /* the side-panel button: a square icon in the header's corner */
 .btn.icon { width: 40px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
-/* hidden panel on a landscape screen: the move clocks stand to the right of the board, one under
-   the other; on a portrait screen they stay in a row above it */
-@media (orientation: landscape) {
-  .game.solo { flex-direction: row; align-items: flex-start; justify-content: center; }
-  .game.solo .mini-clocks { order: 2; flex-direction: column; flex-wrap: nowrap; }
-  .game.solo .board-col { width: min(calc(100% - 200px), calc(100vh - 110px)); }
-}
