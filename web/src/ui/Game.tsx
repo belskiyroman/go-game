@@ -62,11 +62,6 @@ export function Game() {
   const active = (s: Side) => g().phase === 'play' && g().turn === s;
   const played = () => (g().played ?? 0) + (g().playedRunning ? now() - g().serverNow : 0);
 
-  const resultSub = () => {
-    const r = g().result!;
-    if (r.reason === 'resign') return `Победа: соперник сдался`;
-    return `Победа на ${num(r.diff)} очка`; // the points of each side are in the table below
-  };
   // a player as on the board: the stone and the nickname
   const Who = (p: { s: Side; size?: number }) => (
     <span class="who">
@@ -304,9 +299,13 @@ export function Game() {
           <Show when={g().phase === 'result' && g().result}>
             <div class="card" style={{ padding: '20px', display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
               <div>
-                <span class="label">Партия окончена</span>
-                <div style={{ 'font-family': "'Unbounded', 'Manrope', sans-serif", 'font-size': '22px', 'font-weight': 700, 'margin-top': '6px' }}><Who s={g().result!.winner} size={30} /></div>
-                <div class="muted" style={{ 'margin-top': '4px' }}>{resultSub()}</div>
+                <span class="label" style={{ color: 'var(--text)' }}>Победил</span>
+                <div class="winner-line">
+                  <span style={{ 'font-family': "'Unbounded', 'Manrope', sans-serif", 'font-size': '22px', 'font-weight': 700, 'min-width': 0 }}><Who s={g().result!.winner} size={30} /></span>
+                  <span class="winner-by">
+                    <Show when={g().result!.reason === 'score'} fallback="соперник сдался">на <strong>{num(g().result!.diff)}</strong> очка</Show>
+                  </span>
+                </div>
               </div>
               <Show when={g().result!.score}>
                 {(sc) => (

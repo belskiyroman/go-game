@@ -148,3 +148,7 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 .gamerow-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .gamerow-cards { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 6px; }
 .gamerow-cards .gcard { flex: 0 0 270px; }
+/* result card: the winner and the margin on one line */
+.winner-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-top: 6px; }
+.winner-by { color: var(--text); font-size: 17px; white-space: nowrap; }
+.winner-by strong { font-weight: 800; font-variant-numeric: tabular-nums; }
