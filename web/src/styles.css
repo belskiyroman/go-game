@@ -164,7 +164,10 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 /* the side panel hidden: the board takes the room it had */
 .game.solo .board-col { max-width: calc(100vh - 110px); }
 /* the move clock of the player to move, in the header while the panel is hidden */
-.mini-clock { display: inline-flex; align-items: center; gap: 10px; padding: 4px 10px 4px 12px; border-radius: 10px; border: 1px solid var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; white-space: nowrap; flex-shrink: 0; }
+.mini-clock { display: inline-flex; align-items: center; gap: 10px; padding: 4px 10px 4px 12px; border-radius: 10px; border: 1px solid #3a3f45; white-space: nowrap; flex-shrink: 0; transition: box-shadow .3s ease; }
+/* a quiet accent for whose move it is: a narrow stripe on the left, fire for Black, ice for White */
+.mini-clock.side-b { box-shadow: inset 3px 0 0 rgba(255, 122, 26, .75); }
+.mini-clock.side-w { box-shadow: inset 3px 0 0 rgba(90, 166, 255, .75); }
 .mini-clock .mc-time { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .mini-clock .mc-nick { font-weight: 700; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-clock.low .mc-time { color: var(--danger); }
@@ -196,3 +199,11 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 /* a player's card after their pass */
 .pass-mark { font-family: 'Unbounded', 'Manrope', sans-serif; font-size: 26px; font-weight: 800; letter-spacing: .08em; color: var(--ok); line-height: 1.25; }
 .player.passed { border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok) inset; }
+/* the header move clock changes hands: the old content goes into the distance, the new comes from it */
+.mini-clock { position: relative; }
+.clock-now { display: inline-flex; align-items: center; gap: 10px; }
+.clock-now.swap { animation: clock-near .24s cubic-bezier(0, 0, .2, 1) .14s backwards; }
+.clock-ghost { position: absolute; inset: 0; display: flex; align-items: center; gap: 10px; padding: 4px 10px 4px 12px; pointer-events: none; animation: clock-away .18s cubic-bezier(.4, 0, 1, 1) forwards; }
+@keyframes clock-away { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(.55); } }
+@keyframes clock-near { from { opacity: 0; transform: scale(.55); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .clock-now.swap { animation: none; } .clock-ghost { display: none; } }

@@ -93,6 +93,30 @@ export function Game() {
   const [pick, setPick] = createSignal<number | null>(null); // null: the last move
   const [swap, setSwap] = createSignal(false);
   createEffect(on(() => g().id, () => { setPick(null); setSwap(false); }));
+
+  // the move clock in the header (panel hidden): when the turn passes, the frame stays, the old
+  // content goes away into the distance and the new one comes from it
+  type Face = { side: Side; time: string };
+  const [ghost, setGhost] = createSignal<Face | null>(null);
+  const [swaps, setSwaps] = createSignal(0);
+  const lastTime: Partial<Record<Side, string>> = {}; // what each player's clock showed last
+  let ghostTimer: number | undefined;
+  createEffect(on(() => g().turn, (turn, prev) => {
+    if (prev === undefined || turn === prev || !lastTime[prev]) return;
+    setGhost({ side: prev, time: lastTime[prev]! });
+    setSwaps((n) => n + 1);
+    clearTimeout(ghostTimer);
+    ghostTimer = window.setTimeout(() => setGhost(null), 400);
+  }));
+  createEffect(() => { const t = g().turn; lastTime[t] = fmt(timeLeft(t)); });
+  onCleanup(() => clearTimeout(ghostTimer));
+  const ClockFace = (p: Face) => (
+    <>
+      <span class="mc-time">{p.time}</span>
+      <span class="mc-nick">{nickOf(p.side)}</span>
+      <span class={`mini ${p.side}`} aria-hidden="true">{p.side === 'b' ? '火' : '冰'}</span>
+    </>
+  );
   const proposal = () => (g().phase === 'setup' ? g().proposal ?? null : null);
   const mine = () => proposal()?.from === me();
   const theirs = () => !!proposal() && proposal()!.from !== me();
@@ -128,10 +152,11 @@ export function Game() {
         left={
           <Show when={solo()}>
             {/* the panel is hidden: the move clock of the player to move only, next to the logo */}
-            <span class="mini-clock" classList={{ low: timeLeft(g().turn) <= 30000 }} aria-label={`${nickOf(g().turn)}: ${fmt(timeLeft(g().turn))} на ход`}>
-              <span class="mc-time">{fmt(timeLeft(g().turn))}</span>
-              <span class="mc-nick">{nickOf(g().turn)}</span>
-              <span class={`mini ${g().turn}`} aria-hidden="true">{g().turn === 'b' ? '火' : '冰'}</span>
+            <span class="mini-clock" classList={{ low: timeLeft(g().turn) <= 30000, 'side-b': g().turn === 'b', 'side-w': g().turn === 'w' }} aria-label={`${nickOf(g().turn)}: ${fmt(timeLeft(g().turn))} на ход`}>
+              <Show when={ghost()}>{(gh) => <span class="clock-ghost" aria-hidden="true"><ClockFace side={gh().side} time={gh().time} /></span>}</Show>
+              <Show when={swaps() + 1} keyed>
+                {(_n: number) => <span class="clock-now" classList={{ swap: swaps() > 0 }}><ClockFace side={g().turn} time={fmt(timeLeft(g().turn))} /></span>}
+              </Show>
             </span>
           </Show>
         }
