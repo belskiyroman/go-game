@@ -69,6 +69,8 @@ export function Game() {
     return moveMs();
   };
   const active = (s: Side) => g().phase === 'play' && g().turn === s;
+  // this player's last move was a pass (one more pass by the other ends the play)
+  const passed = (s: Side) => g().phase === 'play' && g().passes === 1 && g().turn !== s;
   const played = () => (g().played ?? 0) + (g().playedRunning ? now() - g().serverNow : 0);
 
   // a player as on the board: the stone and the nickname
@@ -190,25 +192,30 @@ export function Game() {
           {/* the player cards (move clocks, prisoners) are hidden while counting and on the result */}
           <For each={g().phase === 'scoring' || g().phase === 'result' ? [] : (['b', 'w'] as Side[])}>
             {(s) => (
-              <section class="player" classList={{ active: active(s) }} aria-label={`${nickOf(s)}, ${s === 'b' ? 'чёрные' : 'белые'}`}>
+              <section class="player" classList={{ active: active(s), passed: passed(s) }} aria-label={`${nickOf(s)}, ${s === 'b' ? 'чёрные' : 'белые'}`}>
                 <div style={{ display: 'flex', 'align-items': 'center', gap: '14px' }}>
                   <div style={{ 'text-align': 'left', 'flex': '0 0 auto' }}>
-                    <div style={{ 'font-size': '26px', 'font-weight': 800, 'font-variant-numeric': 'tabular-nums', color: active(s) ? (timeLeft(s) <= 30000 ? 'var(--danger)' : 'var(--text)') : '#8f9397' }}>{fmt(timeLeft(s))}</div>
-                    <div class="muted" style={{ 'font-size': '12px' }}>{g().phase === 'paused' && g().turn === s ? 'остановлено' : 'на ход'}</div>
-                  </div>
-                  {/* the last move of this player was a pass: one more pass by the other ends the play */}
-                  <div style={{ flex: '1 1 auto', 'text-align': 'center' }}>
-                    <Show when={g().phase === 'play' && g().passes === 1 && g().turn !== s}>
-                      <span class="pass-mark" title="Второй пас подряд завершит партию">ПАС</span>
+                    {/* the last move of this player was a pass: «ПАС» stands in place of the move time */}
+                    <Show
+                      when={passed(s)}
+                      fallback={
+                        <>
+                          <div style={{ 'font-size': '26px', 'font-weight': 800, 'font-variant-numeric': 'tabular-nums', color: active(s) ? (timeLeft(s) <= 30000 ? 'var(--danger)' : 'var(--text)') : '#8f9397' }}>{fmt(timeLeft(s))}</div>
+                          <div class="muted" style={{ 'font-size': '12px' }}>{g().phase === 'paused' && g().turn === s ? 'остановлено' : 'на ход'}</div>
+                        </>
+                      }
+                    >
+                      <div class="pass-mark">ПАС</div>
+                      <div class="muted" style={{ 'font-size': '12px' }}>второй пас завершит партию</div>
                     </Show>
                   </div>
-                  <div style={{ flex: '0 1 auto', 'min-width': 0, 'text-align': 'right' }}>
+                  <div style={{ flex: '1 1 auto', 'min-width': 0, 'text-align': 'right' }}>
                     <div style={{ 'font-size': '17px', 'font-weight': 800, overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>{nickOf(s)}</div>
                     <div class="muted" style={{ 'font-size': '13px' }}>{s === 'b' ? 'Чёрные' : 'Белые'}{s === me() ? ' · вы' : ''}</div>
                   </div>
                   <span class={`mini ${s}`} style={{ width: '34px', height: '34px', 'font-size': '19px', 'flex': '0 0 auto' }}>{s === 'b' ? '火' : '冰'}</span>
                 </div>
-                <div class="timerbar" classList={{ low: active(s) && timeLeft(s) <= 30000 }}><div style={{ width: `${Math.max(0, Math.min(100, (timeLeft(s) / moveMs()) * 100))}%` }} /></div>
+                <div class="timerbar" classList={{ low: active(s) && timeLeft(s) <= 30000 }}><div style={{ width: passed(s) ? '0%' : `${Math.max(0, Math.min(100, (timeLeft(s) / moveMs()) * 100))}%` }} /></div>
                 <div style={{ display: 'flex', 'justify-content': 'space-between', 'font-size': '14px' }} class="muted">
                   <span>Пленные: <strong style={{ color: 'var(--text)', 'font-size': '16px' }}>{g().caps[s]}</strong></span>
                   <Show when={g().phase === 'paused'}>

@@ -190,4 +190,5 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
   .h2h-head .h2h-nick { max-width: 120px; }
 }
 /* a player's card after their pass */
-.pass-mark { font-family: 'Unbounded', 'Manrope', sans-serif; font-size: 20px; font-weight: 800; letter-spacing: .08em; color: var(--ok); line-height: 1; }
+.pass-mark { font-family: 'Unbounded', 'Manrope', sans-serif; font-size: 26px; font-weight: 800; letter-spacing: .08em; color: var(--ok); line-height: 1.25; }
+.player.passed { border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok) inset; }
