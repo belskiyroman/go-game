@@ -90,8 +90,6 @@ h1, h2 { margin: 0; }
 table.score { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
 table.score th, table.score td { padding: 8px 0; text-align: right; border-top: 1px solid #33383d; }
 table.score th:first-child { text-align: left; }
-.gameclock { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 10px 16px; border-radius: 12px; background: #1f2225; border: 1px solid #33383d; font-size: 14px; }
-.gameclock strong { font-size: 18px; font-variant-numeric: tabular-nums; }
 .who { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; vertical-align: middle; }
 .who-nick { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 table.score thead th .who { max-width: 130px; margin-left: 12px; }
@@ -154,3 +152,6 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 .h2h-head { display: inline-flex; align-items: center; gap: 8px; margin-right: 6px; font-size: 15px; min-width: 0; }
 .h2h-head strong { font-size: 17px; font-variant-numeric: tabular-nums; }
 .h2h-head .h2h-nick { max-width: 140px; }
+/* the game time in the game header */
+.game-time { display: inline-flex; align-items: baseline; gap: 8px; margin-right: 14px; font-size: 15px; }
+.game-time strong { font-size: 17px; font-variant-numeric: tabular-nums; }
