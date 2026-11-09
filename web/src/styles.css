@@ -158,3 +158,9 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 /* the game time in the game header */
 .game-time { display: inline-flex; align-items: baseline; gap: 8px; margin-right: 14px; font-size: 15px; }
 .game-time strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+/* the side panel hidden: the board takes the room it had */
+.game.solo .board-col { max-width: calc(100vh - 110px); }
+.side[hidden] { display: none; }
+/* header items keep their text on one line and wrap as whole items on narrow screens */
+.topbar nav { flex-wrap: wrap; justify-content: flex-end; }
+.topbar .btn, .game-time, .h2h-head { white-space: nowrap; flex-shrink: 0; }
