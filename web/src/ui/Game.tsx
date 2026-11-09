@@ -196,7 +196,13 @@ export function Game() {
                     <div style={{ 'font-size': '26px', 'font-weight': 800, 'font-variant-numeric': 'tabular-nums', color: active(s) ? (timeLeft(s) <= 30000 ? 'var(--danger)' : 'var(--text)') : '#8f9397' }}>{fmt(timeLeft(s))}</div>
                     <div class="muted" style={{ 'font-size': '12px' }}>{g().phase === 'paused' && g().turn === s ? 'остановлено' : 'на ход'}</div>
                   </div>
-                  <div style={{ flex: '1 1 auto', 'min-width': 0, 'text-align': 'right' }}>
+                  {/* the last move of this player was a pass: one more pass by the other ends the play */}
+                  <div style={{ flex: '1 1 auto', 'text-align': 'center' }}>
+                    <Show when={g().phase === 'play' && g().passes === 1 && g().turn !== s}>
+                      <span class="pass-mark" title="Второй пас подряд завершит партию">ПАС</span>
+                    </Show>
+                  </div>
+                  <div style={{ flex: '0 1 auto', 'min-width': 0, 'text-align': 'right' }}>
                     <div style={{ 'font-size': '17px', 'font-weight': 800, overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>{nickOf(s)}</div>
                     <div class="muted" style={{ 'font-size': '13px' }}>{s === 'b' ? 'Чёрные' : 'Белые'}{s === me() ? ' · вы' : ''}</div>
                   </div>
@@ -207,10 +213,6 @@ export function Game() {
                   <span>Пленные: <strong style={{ color: 'var(--text)', 'font-size': '16px' }}>{g().caps[s]}</strong></span>
                   <Show when={g().phase === 'paused'}>
                     <span style={{ color: g().ready[s] ? 'var(--ok)' : '#c9c3ba', 'font-weight': 700 }}>{g().ready[s] ? 'Готов продолжить' : 'Не готов'}</span>
-                  </Show>
-                  {/* the last move of this player was a pass: one more pass by the other ends the play */}
-                  <Show when={g().phase === 'play' && g().passes === 1 && g().turn !== s}>
-                    <span class="pass-mark" title="Второй пас подряд завершит партию">ПАС</span>
                   </Show>
                 </div>
               </section>
