@@ -226,8 +226,12 @@ func TestBackToMainAndPromote(t *testing.T) {
 	h.handle(a, inMsg{T: "resume", Game: main.ID})
 	h.handle(b, inMsg{T: "acceptInvite", From: a.ID})
 	second := startAlt(t, h, a, b)
+	main.Played = 7 * time.Minute // the main game was played for 7 minutes before it was adjourned
 	h.handle(a, inMsg{T: "ask", Kind: ReqPromote})
 	h.handle(b, inMsg{T: "askAnswer", Accept: true})
+	if p := second.PlayedTime(time.Now()); p < 7*time.Minute || p > 7*time.Minute+time.Second {
+		t.Fatalf("game time after promote %v, want the old main game's 7 minutes added", p)
+	}
 	if second.Parent != "" || h.games[main.ID] != nil || first.Parent != second.ID {
 		t.Fatalf("promote: second.Parent=%q main kept=%v first.Parent=%q", second.Parent, h.games[main.ID] != nil, first.Parent)
 	}

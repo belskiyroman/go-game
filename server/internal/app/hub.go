@@ -447,10 +447,11 @@ func (h *Hub) backToMain(alt *Game, now time.Time) {
 	h.broadcastLobby()
 }
 
-// promote makes the alternative the main game: the old main game is closed without counting and
-// its other alternatives now belong to this one.
+// promote makes the alternative the main game: the old main game is closed without counting,
+// its game time is added to this one's, and its other alternatives now belong to this one.
 func (h *Hub) promote(alt *Game) {
 	if main := h.games[alt.Parent]; main != nil {
+		alt.Played += main.PlayedTime(time.Now())
 		if main.timer != nil {
 			main.timer.Stop()
 		}
