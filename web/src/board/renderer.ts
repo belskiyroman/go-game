@@ -112,6 +112,9 @@ export class BoardRenderer {
     for (const q of this.pending) this.position(q.p.st, q.p.idx);
     this.groups = []; // capture chains in flight are dropped on resize
     this.staticDirty = true;
+    // a resized canvas is blank until it is drawn again: draw now, before the page is painted,
+    // so the stones do not blink while the board grows or shrinks (the side panel animation)
+    this.frame();
   }
 
   private xy(idx: number) { return [idx % this.size, Math.floor(idx / this.size)] as const; }

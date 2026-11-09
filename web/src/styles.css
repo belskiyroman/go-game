@@ -168,7 +168,11 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 .mini-clock .mc-time { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .mini-clock .mc-nick { font-weight: 700; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-clock.low .mc-time { color: var(--danger); }
-.side[hidden] { display: none; }
+/* the side panel slides away and back: it narrows and fades while the board takes its place */
+.side { max-height: 4000px; transition: max-width .25s cubic-bezier(.4, 0, .2, 1), flex-basis .25s cubic-bezier(.4, 0, .2, 1), margin .25s cubic-bezier(.4, 0, .2, 1), opacity .2s ease .05s, max-height 0s, visibility 0s; }
+.side.collapsed { max-width: 0; flex-basis: 0; margin-left: -24px; opacity: 0; max-height: 0; overflow: hidden; visibility: hidden; pointer-events: none;
+  transition: max-width .25s cubic-bezier(.4, 0, .2, 1), flex-basis .25s cubic-bezier(.4, 0, .2, 1), margin .25s cubic-bezier(.4, 0, .2, 1), opacity .15s ease, max-height 0s linear .25s, visibility 0s linear .25s; }
+@media (prefers-reduced-motion: reduce) { .side, .side.collapsed { transition: none; } }
 /* header items keep their text on one line and wrap as whole items on narrow screens */
 .tb-right { flex-wrap: wrap; justify-content: flex-end; }
 .topbar .btn, .game-time, .h2h-head { white-space: nowrap; flex-shrink: 0; }
