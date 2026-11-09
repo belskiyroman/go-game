@@ -175,3 +175,10 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 .topbar .btn, .game-time, .h2h-head { white-space: nowrap; flex-shrink: 0; }
 /* the side-panel button: a square icon in the header's corner */
 .btn.icon { width: 40px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+/* hidden panel on a landscape screen: the move clocks stand to the right of the board, one under
+   the other; on a portrait screen they stay in a row above it */
+@media (orientation: landscape) {
+  .game.solo { flex-direction: row; align-items: flex-start; justify-content: center; }
+  .game.solo .mini-clocks { order: 2; flex-direction: column; flex-wrap: nowrap; }
+  .game.solo .board-col { width: min(calc(100% - 200px), calc(100vh - 110px)); }
+}
