@@ -46,7 +46,17 @@ export function Game() {
   });
   onCleanup(() => { offStart(); clearTimeout(startTimer); });
 
+  // the side panel can be hidden during play to leave only the board and the header; in the other
+  // phases (setup, pause, counting, result) it holds the actions, so it shows by itself.
+  // The choice is kept in this browser.
+  const [panelOff, setPanelOff] = createSignal((() => { try { return localStorage.getItem('gogame.panel') === 'off'; } catch { return false; } })());
+  const togglePanel = () => {
+    const off = !panelOff();
+    setPanelOff(off);
+    try { localStorage.setItem('gogame.panel', off ? 'off' : 'on'); } catch { /* private mode: only for this page */ }
+  };
   const g = () => app.game!;
+  const solo = () => panelOff() && g().phase === 'play';
   const me = () => g().you as Side;
   const opp = () => (me() === 'b' ? 'w' : 'b') as Side;
   const nickOf = (s: Side) => (s === 'b' ? g().black.nick : g().white.nick);
@@ -125,10 +135,13 @@ export function Game() {
             <span class="mini w" aria-hidden="true">冰</span>
             <span class="h2h-nick">{nickOf('w')}</span>
           </span>
+          <Show when={g().phase === 'play'}>
+            <button class="btn small" aria-pressed={panelOff()} onClick={togglePanel}>{panelOff() ? 'Показать панель' : 'Скрыть панель'}</button>
+          </Show>
           </>
         }
       />
-      <main class="game">
+      <main class="game" classList={{ solo: solo() }}>
         <div class="board-col">
           <Board blurred={g().phase === 'paused'} view={view()} offer={!!proposal()} picking={g().phase === 'setup'} />
           <Show when={startNote()}>
@@ -150,7 +163,7 @@ export function Game() {
           </Show>
         </div>
 
-        <aside class="side">
+        <aside class="side" hidden={solo()}>
           <Show when={g().parent && g().phase !== 'setup'}>
             <div class="altline"><span class="chip alt">Альтернативный розыгрыш</span><span class="muted">с хода {g().from}</span></div>
           </Show>
