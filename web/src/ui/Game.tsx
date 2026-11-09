@@ -313,7 +313,7 @@ export function Game() {
                     <thead><tr class="muted"><th scope="col"></th><th scope="col"><Who s="b" /></th><th scope="col"><Who s="w" /></th></tr></thead>
                     <tbody>
                       <tr><th scope="row">Территория</th><td>{sc().bTerritory}</td><td>{sc().wTerritory}</td></tr>
-                      <tr><th scope="row">Пленные, с мёртвыми</th><td>{sc().bPrisoners}</td><td>{sc().wPrisoners}</td></tr>
+                      <tr><th scope="row">Пленные</th><td>{sc().bPrisoners}</td><td>{sc().wPrisoners}</td></tr>
                       <tr><th scope="row">Коми</th><td>—</td><td>{num(sc().komi)}</td></tr>
                       <tr style={{ 'font-weight': 800 }}><th scope="row">Итого</th><td>{num(sc().b)}</td><td>{num(sc().w)}</td></tr>
                       <tr style={{ 'font-weight': 800 }}><th scope="row">Разница</th><td>{g().result!.winner === 'b' ? '+' + num(g().result!.diff) : ''}</td><td>{g().result!.winner === 'w' ? '+' + num(g().result!.diff) : ''}</td></tr>
