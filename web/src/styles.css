@@ -151,3 +151,4 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 /* result card: the winner and the margin on one line */
 .winner-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-top: 6px; }
 .winner-by { color: var(--text); font-size: 17px; white-space: nowrap; }
+.winner-by strong { font-weight: 800; font-variant-numeric: tabular-nums; }
