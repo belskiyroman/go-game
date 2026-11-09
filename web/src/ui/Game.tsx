@@ -150,7 +150,7 @@ export function Game() {
         corner={
           <Show when={g().phase === 'play'}>
             {/* the last item in the corner, with a fixed size: it stays in place when pressed */}
-            <button class="btn small icon" classList={{ on: !panelOff() }} aria-pressed={!panelOff()} aria-label={panelOff() ? 'Показать панель' : 'Скрыть панель'} title={panelOff() ? 'Показать панель' : 'Скрыть панель'} onClick={togglePanel}>
+            <button class="btn small icon" aria-pressed={!panelOff()} aria-label={panelOff() ? 'Показать панель' : 'Скрыть панель'} title={panelOff() ? 'Показать панель' : 'Скрыть панель'} onClick={togglePanel}>
               <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
                 <rect x="2" y="3" width="16" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6" />
                 <rect x="12" y="3.8" width="5.2" height="12.4" rx="1.6" fill="currentColor" opacity={panelOff() ? 0 : 0.85} />
