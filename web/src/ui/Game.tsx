@@ -180,10 +180,12 @@ export function Game() {
           </Show>
 
           <Show when={g().phase === 'play'}>
-            <div style={{ padding: '12px 14px', 'border-radius': '12px', background: '#1f2225', border: '1px solid #33383d', display: 'flex', 'flex-direction': 'column', gap: '4px' }}>
-              <strong>{g().turn === me() ? 'Ваш ход' : `Ход ${sideName(g().turn)}`}</strong>
-              <span class="muted" style={{ 'min-height': '20px' }}>{g().passes === 1 ? `Пас ${sideName(g().turn === 'b' ? 'w' : 'b')}. Второй пас подряд завершит партию` : ''}</span>
-            </div>
+            {/* whose move it is shows on the player cards; only the warning after a pass stays */}
+            <Show when={g().passes === 1}>
+              <div style={{ padding: '12px 14px', 'border-radius': '12px', background: '#1f2225', border: '1px solid #33383d', color: '#c9c3ba' }}>
+                Пас {sideName(g().turn === 'b' ? 'w' : 'b')}. Второй пас подряд завершит партию
+              </div>
+            </Show>
             <Show when={g().pauseReq === me()}>
               <div class="banner">
                 <div style={{ display: 'flex', 'align-items': 'center', gap: '10px' }}><div class="spinner" /><strong>Ждём ответа на паузу</strong></div>
