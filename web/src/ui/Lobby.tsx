@@ -1,4 +1,4 @@
-import { For, Show } from 'solid-js';
+import { For, Show, type JSX } from 'solid-js';
 import { app, setApp, komiLabel, timeLabel, type Settings } from '../store';
 import { send } from '../net';
 
@@ -9,7 +9,8 @@ const TIMES = [30, 60, 120, 180, 300, 600];
 /** How many games wait in "My games" to be continued. */
 const adjourned = () => (app.lobby?.games ?? []).filter((g) => !g.current).length;
 
-export function Topbar(props: { info?: string }) {
+/** The header; in a game `who` (the head-to-head score) takes the place of «Вы: nick». */
+export function Topbar(props: { info?: string; who?: JSX.Element }) {
   return (
     <header class="topbar">
       <div class="brand">
@@ -18,7 +19,9 @@ export function Topbar(props: { info?: string }) {
         <span class="muted" style={{ 'font-family': 'Manrope', 'font-weight': 500, 'font-size': '15px', 'margin-left': '8px' }}>{props.info ?? 'Комната без рейтинга'}</span>
       </div>
       <nav style={{ display: 'flex', 'align-items': 'center', gap: '10px' }} aria-label="Разделы">
-        <span class="muted" style={{ 'font-size': '15px', 'margin-right': '4px' }}>Вы: <strong style={{ color: 'var(--text)' }}>{app.me?.nick}</strong></span>
+        <Show when={props.who} fallback={<span class="muted" style={{ 'font-size': '15px', 'margin-right': '4px' }}>Вы: <strong style={{ color: 'var(--text)' }}>{app.me?.nick}</strong></span>}>
+          {props.who}
+        </Show>
         <Show when={app.view === 'games'}>
           <button class="btn small" onClick={() => setApp('view', 'main')}>{app.game ? 'К партии' : 'Комната'}</button>
         </Show>
