@@ -123,19 +123,17 @@ export function Game() {
     <div>
       <Topbar
         info=""
-        who={
-          <>
-          {/* the panel is hidden: the move clock of the player to move only */}
+        left={
           <Show when={solo()}>
+            {/* the panel is hidden: the move clock of the player to move only, next to the logo */}
             <span class="mini-clock" classList={{ low: timeLeft(g().turn) <= 30000 }} aria-label={`${nickOf(g().turn)}: ${fmt(timeLeft(g().turn))} на ход`}>
               <span class="mc-time">{fmt(timeLeft(g().turn))}</span>
               <span class="mc-nick">{nickOf(g().turn)}</span>
               <span class={`mini ${g().turn}`} aria-hidden="true">{g().turn === 'b' ? '火' : '冰'}</span>
             </span>
           </Show>
-          <Show when={g().phase !== 'setup'}>
-            <span class="game-time" aria-label="Время партии без пауз"><span>Время партии</span><span class="gt-num">{fmtLong(played())}</span></span>
-          </Show>
+        }
+        center={
           <span class="h2h-head" role="img" aria-label={`Счёт встреч: ${nickOf('b')} ${g().h2h?.b ?? 0}, ${nickOf('w')} ${g().h2h?.w ?? 0}`}>
             <span class="h2h-nick">{nickOf('b')}</span>
             <span class="mini b" aria-hidden="true">火</span>
@@ -143,7 +141,11 @@ export function Game() {
             <span class="mini w" aria-hidden="true">冰</span>
             <span class="h2h-nick">{nickOf('w')}</span>
           </span>
-          </>
+        }
+        who={
+          <Show when={g().phase !== 'setup'} fallback={<span />}>
+            <span class="game-time" aria-label="Время партии без пауз"><span>Время партии</span><span class="gt-num">{fmtLong(played())}</span></span>
+          </Show>
         }
         corner={
           <Show when={g().phase === 'play'}>

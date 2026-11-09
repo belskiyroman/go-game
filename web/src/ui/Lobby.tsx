@@ -10,20 +10,32 @@ const TIMES = [30, 60, 120, 180, 300, 600];
 const adjourned = () => (app.lobby?.games ?? []).filter((g) => !g.current).length;
 
 /** The header; in a game `who` (the head-to-head score) takes the place of «Вы: nick». */
-export function Topbar(props: { info?: string; who?: JSX.Element; corner?: JSX.Element }) {
+/**
+ * The header in three parts: the logo and `left` (in a game, the move clock), `center` (the
+ * head-to-head score) and on the right `who` (in a game, the game time; elsewhere «Вы: nick"),
+ * the buttons and `corner` (the side-panel button).
+ */
+export function Topbar(props: { info?: string; left?: JSX.Element; center?: JSX.Element; who?: JSX.Element; corner?: JSX.Element }) {
   return (
     <header class="topbar">
-      <div class="brand">
-        <span aria-hidden="true" style={{ display: 'flex' }}><span class="mini b">火</span><span class="mini w" style={{ 'margin-left': '-6px' }}>冰</span></span>
-        Го онлайн
-        <Show when={props.info !== ''}>
-          <span class="muted" style={{ 'font-family': 'Manrope', 'font-weight': 500, 'font-size': '15px', 'margin-left': '8px' }}>{props.info ?? 'Комната без рейтинга'}</span>
-        </Show>
+      <div class="tb-left">
+        <div class="brand">
+          <span aria-hidden="true" style={{ display: 'flex' }}><span class="mini b">火</span><span class="mini w" style={{ 'margin-left': '-6px' }}>冰</span></span>
+          <span class="brand-name">Го онлайн</span>
+          <Show when={props.info !== ''}>
+            <span class="muted brand-info" style={{ 'font-family': 'Manrope', 'font-weight': 500, 'font-size': '15px', 'margin-left': '8px' }}>{props.info ?? 'Комната без рейтинга'}</span>
+          </Show>
+        </div>
+        {props.left}
       </div>
-      <nav style={{ display: 'flex', 'align-items': 'center', gap: '10px' }} aria-label="Разделы">
-        <Show when={props.who} fallback={<span class="muted" style={{ 'font-size': '15px', 'margin-right': '4px' }}>Вы: <strong style={{ color: 'var(--text)' }}>{app.me?.nick}</strong></span>}>
-          {props.who}
-        </Show>
+      <div class="tb-center">{props.center}</div>
+      <nav class="tb-right" aria-label="Разделы">
+        <span class="tb-who">
+          <Show when={props.who} fallback={<span class="muted" style={{ 'font-size': '15px', 'margin-right': '4px' }}>Вы: <strong style={{ color: 'var(--text)' }}>{app.me?.nick}</strong></span>}>
+            {props.who}
+          </Show>
+        </span>
+        <span class="tb-buttons">
         <Show when={app.view === 'games'}>
           <button class="btn small" onClick={() => setApp('view', 'main')}>{app.game ? 'К партии' : 'Комната'}</button>
         </Show>
@@ -31,6 +43,7 @@ export function Topbar(props: { info?: string; who?: JSX.Element; corner?: JSX.E
           Мои партии<Show when={adjourned() > 0}><span class="count">{adjourned()}</span></Show>
         </button>
         {props.corner}
+        </span>
       </nav>
     </header>
   );
