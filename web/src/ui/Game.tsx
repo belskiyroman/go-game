@@ -122,6 +122,7 @@ export function Game() {
   return (
     <div>
       <Topbar
+        inGame
         info=""
         left={
           <Show when={solo()}>
