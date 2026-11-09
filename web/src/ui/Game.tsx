@@ -151,6 +151,20 @@ export function Game() {
         }
       />
       <main class="game" classList={{ solo: solo() }}>
+        {/* the panel is hidden: the move clocks stay as two small boxes in a row above the board */}
+        <Show when={solo()}>
+          <div class="mini-clocks">
+            <For each={['b', 'w'] as Side[]}>
+              {(s) => (
+                <div class="mini-clock" classList={{ active: active(s), low: active(s) && timeLeft(s) <= 30000 }} aria-label={`${nickOf(s)}: ${fmt(timeLeft(s))} на ход`}>
+                  <span class="mc-time">{fmt(timeLeft(s))}</span>
+                  <span class="mc-nick">{nickOf(s)}</span>
+                  <span class={`mini ${s}`} aria-hidden="true">{s === 'b' ? '火' : '冰'}</span>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
         <div class="board-col">
           <Board blurred={g().phase === 'paused'} view={view()} offer={!!proposal()} picking={g().phase === 'setup'} />
           <Show when={startNote()}>
