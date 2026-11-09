@@ -137,6 +137,9 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 /* the board shows an offered start move: a blue frame until the game starts or the offer is gone */
 .frame.offer { background: linear-gradient(180deg, #16304f, #0f2440); }
 .frame.offer .coord { color: #9cc6f5; }
+/* choosing the start move of an alternative game: a grey frame (blue once a move is offered) */
+.frame.picking { background: linear-gradient(180deg, #3a3d42, #2b2e32); }
+.frame.picking .coord { color: #b9bdc2; }
 .chip.main { background: #2a2e32; color: var(--text); }
 .gcard.now { border-color: var(--ok); }
 .gamerow { display: flex; flex-direction: column; gap: 10px; }
