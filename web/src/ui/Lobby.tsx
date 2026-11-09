@@ -10,7 +10,7 @@ const TIMES = [30, 60, 120, 180, 300, 600];
 const adjourned = () => (app.lobby?.games ?? []).filter((g) => !g.current).length;
 
 /** The header; in a game `who` (the head-to-head score) takes the place of «Вы: nick». */
-export function Topbar(props: { info?: string; who?: JSX.Element }) {
+export function Topbar(props: { info?: string; who?: JSX.Element; corner?: JSX.Element }) {
   return (
     <header class="topbar">
       <div class="brand">
@@ -28,6 +28,7 @@ export function Topbar(props: { info?: string; who?: JSX.Element }) {
         <button class="btn small" classList={{ on: app.view === 'games' }} aria-pressed={app.view === 'games'} onClick={() => setApp('view', 'games')}>
           Мои партии<Show when={adjourned() > 0}><span class="count">{adjourned()}</span></Show>
         </button>
+        {props.corner}
       </nav>
     </header>
   );
