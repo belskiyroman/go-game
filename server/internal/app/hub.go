@@ -180,6 +180,22 @@ func (h *Hub) busy(id string) bool {
 	return g != nil && g.Active()
 }
 
+// Drop closes the connections of one browser's session (on logout); the player's other
+// browsers stay connected.
+func (h *Hub) Drop(s *Session) {
+	h.mu.Lock()
+	var mine []*Conn
+	for c := range h.conns[s.ID] {
+		if c.session == s {
+			mine = append(mine, c)
+		}
+	}
+	h.mu.Unlock()
+	for _, c := range mine {
+		_ = c.ws.Close(websocket.StatusNormalClosure, "logout")
+	}
+}
+
 func (h *Hub) online(id string) bool { return len(h.conns[id]) > 0 }
 
 // release takes the player out of their (finished) game.

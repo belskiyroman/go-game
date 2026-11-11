@@ -23,6 +23,7 @@ func (srv *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/me", srv.me)
 	mux.HandleFunc("POST /api/login", srv.login)
+	mux.HandleFunc("POST /api/logout", srv.logout)
 	mux.HandleFunc("GET /ws", srv.ws)
 	mux.HandleFunc("/", srv.static)
 	return mux
@@ -86,6 +87,19 @@ func (srv *Server) login(w http.ResponseWriter, r *http.Request) {
 	s := srv.Sessions.Login(token, nick)
 	srv.setCookie(w, r, s)
 	writeJSON(w, http.StatusOK, map[string]string{"id": s.ID, "nick": s.Nick, "tag": s.Tag()})
+}
+
+// logout signs this browser out: the cookie goes and its connections close. The player stays:
+// signing in with the same nickname comes back to them.
+func (srv *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if s := srv.session(r); s != nil {
+		srv.Hub.Drop(s)
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: cookieName, Value: "", Path: "/", HttpOnly: true,
+		Secure: isHTTPS(r), SameSite: http.SameSiteLaxMode, MaxAge: -1,
+	})
+	writeJSON(w, http.StatusOK, nil)
 }
 
 func (srv *Server) ws(w http.ResponseWriter, r *http.Request) {

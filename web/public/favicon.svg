@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="b" cx="34%" cy="28%" r="75%">
+      <stop offset="0" stop-color="#7a7f86"/><stop offset=".22" stop-color="#34373b"/><stop offset=".58" stop-color="#121315"/><stop offset="1" stop-color="#050506"/>
+    </radialGradient>
+    <radialGradient id="w" cx="34%" cy="28%" r="75%">
+      <stop offset="0" stop-color="#fff"/><stop offset=".3" stop-color="#f4f2ec"/><stop offset=".72" stop-color="#dcd8ce"/><stop offset="1" stop-color="#bfbaae"/>
+    </radialGradient>
+  </defs>
+  <!-- the logo: a black stone (火) and a white stone (冰) overlapping -->
+  <circle cx="21" cy="21" r="20" fill="url(#b)"/>
+  <text x="18" y="27" text-anchor="middle" font-size="18" font-family="'Hiragino Mincho ProN','Yu Mincho','Noto Serif CJK JP',serif" fill="#d3cec4">火</text>
+  <circle cx="43" cy="43" r="21" fill="#141618"/>
+  <circle cx="43" cy="43" r="20" fill="url(#w)"/>
+  <text x="43" y="50.5" text-anchor="middle" font-size="21" font-family="'Hiragino Mincho ProN','Yu Mincho','Noto Serif CJK JP',serif" fill="#3b352f">冰</text>
+</svg>
