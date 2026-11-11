@@ -33,6 +33,7 @@ type Hub struct {
 	mu         sync.Mutex
 	sessions   *SessionStore
 	results    *ResultStore
+	history    *HistoryStore
 	conns      map[string]map[*Conn]bool
 	settings   map[string]Settings
 	invites    map[string]*Invite // by inviter id
@@ -47,7 +48,7 @@ func NewHub(sessions *SessionStore, results *ResultStore, gamesPath string) *Hub
 	h := &Hub{
 		sessions: sessions, results: results, conns: map[string]map[*Conn]bool{}, settings: map[string]Settings{},
 		invites: map[string]*Invite{}, games: map[string]*Game{}, playerGame: map[string]*Game{},
-		gamesPath: gamesPath,
+		gamesPath: gamesPath, history: NewHistoryStore(HistoryPath(gamesPath)),
 	}
 	if gamesPath != "" {
 		h.loadGames()
@@ -305,6 +306,16 @@ func (h *Hub) handle(s *Session, m inMsg) {
 		h.sendTo(s.ID, map[string]any{"t": "me", "id": s.ID, "nick": s.Nick, "tag": s.Tag()})
 		h.broadcastLobby()
 
+	case "history": // the player's games, the latest first
+		h.sendTo(s.ID, map[string]any{"t": "history", "games": h.history.Of(s.Nick)})
+
+	case "historyGame": // one game of the history with its moves (SGF), to look through
+		if r := h.history.Get(m.Game, s.Nick); r != nil && r.Status == HistFinished {
+			h.sendTo(s.ID, map[string]any{"t": "historyGame", "id": r.ID, "sgf": r.SGF})
+		} else {
+			h.sendTo(s.ID, map[string]any{"t": "error", "error": "no such game"})
+		}
+
 	case "leave":
 		if g := h.playerGame[s.ID]; g != nil && !g.Active() {
 			h.release(s.ID)
@@ -382,6 +393,7 @@ func (h *Hub) continueGame(inv *Invite, now time.Time) {
 func (h *Hub) adjournGame(g *Game, now time.Time) {
 	ids := h.gamePlayers(g)
 	g.Adjourn(now)
+	h.archive(g, HistAdjourned)
 	h.armTimer(g)
 	for _, id := range ids {
 		delete(h.playerGame, id)
@@ -393,6 +405,7 @@ func (h *Hub) adjournGame(g *Game, now time.Time) {
 
 // closeGame ends the game without counting; it is not counted in the score and is not kept.
 func (h *Hub) closeGame(g *Game) {
+	h.archive(g, HistClosed)
 	if g.timer != nil {
 		g.timer.Stop()
 	}
@@ -445,6 +458,7 @@ func (h *Hub) backToMain(alt *Game, now time.Time) {
 	if alt.timer != nil {
 		alt.timer.Stop()
 	}
+	h.archive(alt, HistClosed)
 	delete(h.games, alt.ID)
 	for _, id := range ids {
 		delete(h.playerGame, id)
@@ -468,6 +482,7 @@ func (h *Hub) backToMain(alt *Game, now time.Time) {
 func (h *Hub) promote(alt *Game) {
 	if main := h.games[alt.Parent]; main != nil {
 		alt.Played += main.PlayedTime(time.Now())
+		h.archive(main, HistClosed)
 		if main.timer != nil {
 			main.timer.Stop()
 		}
@@ -491,6 +506,7 @@ func (h *Hub) branchGame(g *Game, now time.Time) {
 	alt := g.Branch(now)
 	if g.Active() {
 		g.Adjourn(now)
+		h.archive(g, HistAdjourned)
 		h.armTimer(g)
 	}
 	h.games[alt.ID] = alt
@@ -691,6 +707,7 @@ func (h *Hub) broadcastGame(g *Game, event map[string]any) {
 			w = rules.White
 		}
 		h.results.Add(g.Nicks[w], g.Nicks[w.Opponent()])
+		h.archive(g, HistFinished)
 		h.detachAlts(g)
 	}
 	for _, c := range []rules.Color{rules.Black, rules.White} {

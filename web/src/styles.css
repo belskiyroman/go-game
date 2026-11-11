@@ -207,3 +207,60 @@ table.score thead th .who { max-width: 130px; margin-left: 12px; }
 @keyframes clock-away { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(.55); } }
 @keyframes clock-near { from { opacity: 0; transform: scale(.55); } to { opacity: 1; transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { .clock-now.swap { animation: none; } .clock-ghost { display: none; } }
+
+/* the game history */
+.hist { display: flex; flex-direction: column; gap: 14px; }
+.hcard { display: grid; grid-template-columns: 150px minmax(0, 1fr) minmax(260px, 300px); gap: 18px; align-items: start; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+.hhead { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.toprow { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.vsline { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; min-width: 0; white-space: nowrap; }
+.vsline .nk { font-weight: 700; color: #d6d2ca; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+.vsline .nk.me { color: var(--text); }
+.vsline strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.hcard .when { white-space: nowrap; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.meta2 { font-size: 14px; color: var(--muted); }
+.verdict { font-size: 17px; font-weight: 800; }
+.verdict.win { color: var(--ok); }
+.verdict.loss { color: #e0806b; }
+.verdict span { color: var(--text); font-weight: 600; font-size: 15px; margin-left: 6px; }
+.verdict b { font-weight: 800; }
+.chip.done { background: rgba(108, 196, 151, .15); color: var(--ok); }
+.chip.adj { background: rgba(240, 136, 62, .14); color: var(--accent); }
+.chip.closed { background: #2a2e32; color: #9a9ea3; }
+table.score.compact { font-size: 14px; }
+table.score.compact th, table.score.compact td { padding: 6px 0; }
+table.score td.unk { color: #6f7378; }
+.hfoot { display: flex; justify-content: flex-end; margin-top: 10px; }
+@media (max-width: 1000px) { .hcard { grid-template-columns: minmax(0, 1fr); } .hmini { display: none; } }
+/* phones: the players on one line; the size and moves on the left of the second line, the date on its right */
+@media (max-width: 640px) {
+  .hcard { padding: 14px; gap: 10px; }
+  .hhead { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-auto-flow: row dense; gap: 8px 12px; }
+  .hhead > * { grid-column: 1 / -1; }
+  .toprow { display: contents; }
+  .hhead .vsline { grid-row: 1; }
+  .hhead .meta2 { grid-row: 2; grid-column: 1; }
+  .hhead .when { grid-row: 2; grid-column: 2; text-align: right; }
+}
+
+/* looking through a history game */
+.review { display: flex; flex-wrap: wrap; gap: 24px; padding: 20px 16px; max-width: 1400px; margin: 0 auto; align-items: flex-start; justify-content: center; }
+.rv-board { position: relative; width: 100%; aspect-ratio: 1 / 1; }
+.rv-main { flex: 1 1 560px; min-width: 280px; max-width: min(860px, calc(100vh - 110px)); }
+.review.two .rv-col { flex: 1 1 420px; min-width: 280px; max-width: max(360px, min(640px, calc(100vh - 330px))); display: flex; flex-direction: column; gap: 10px; }
+.review.one { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 12px; padding: 12px; }
+.rv-label { min-height: 32px; align-items: center; }
+.btn.rv-close { min-height: 30px; width: 30px; padding: 0; }
+.caps { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.caps .muted { margin-right: 2px; }
+.caps strong { margin-right: 4px; }
+.caps .mini, .vsline .mini { width: 20px; height: 20px; font-size: 12px; }
+.step { font-weight: 700; font-variant-numeric: tabular-nums; }
+.note { font-size: 13px; color: var(--muted); line-height: 1.45; }
+/* phones: with several header buttons (room, history, my games, logout) they get their own row */
+@media (max-width: 640px) {
+  .topbar:has(.tb-buttons > :nth-child(2)) .tb-who { grid-row: 1; grid-column: 2; justify-self: end; }
+  .topbar:has(.tb-buttons > :nth-child(2)) .tb-buttons { grid-row: 2; grid-column: 1 / -1; justify-self: stretch; justify-content: flex-end; flex-wrap: wrap; }
+  .topbar:has(.tb-buttons > :nth-child(2)) .tb-buttons > .btn:not(.icon) { flex: 1 1 auto; }
+  .hhead .vsline { grid-column: 1 / -1; }
+}

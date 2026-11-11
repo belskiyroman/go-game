@@ -44,6 +44,18 @@ export type GameState = {
   source?: [number, number, number][]; // setup: the moves to choose from, [color 1|2, x, y] (a pass is x = -1)
   proposal?: { from: Side; step: number; swap: boolean }; // setup: the offered start move
 };
+/** A game of the history (finished, adjourned or closed), as the list shows it. */
+export type HistoryGame = {
+  id: string; status: 'finished' | 'adjourned' | 'closed'; alt: boolean; from: number;
+  black: string; white: string; size: number; komi: number; moveTime: number;
+  started: string; ended: string; moves: number;
+  caps: [number, number];   // stones captured during play by black, by white
+  result?: { winner: Side; reason: 'score' | 'resign'; score?: Score; diff: number };
+  h2h: [number, number];    // head-to-head wins when the game ended: black's, white's
+  board: string; last: number;
+};
+/** A move as [color 1|2, x, y]; a pass is x = -1. */
+export type Move3 = [number, number, number];
 export type GameEvent =
   | { kind: 'move'; color: Side; x: number; y: number; captured: number[] }
   | { kind: 'pass'; color: Side; timeout?: boolean }
@@ -58,11 +70,13 @@ type AppState = {
   lobby: Lobby | null;
   game: GameState | null;
   clockOffset: number;       // server time minus local time, ms
-  view: 'main' | 'games';    // "My games" opened over the room or the game
+  view: 'main' | 'games' | 'history' | 'review'; // "My games", the history, a game of the history
+  history: HistoryGame[] | null;                  // the player's games, the latest first
+  review: { id: string; moves: Move3[] | null; sgf: string } | null; // the history game looked through
 };
 
 export const [app, setApp] = createStore<AppState>({
-  me: null, checked: false, renaming: false, connected: false, lobby: null, game: null, clockOffset: 0, view: 'main',
+  me: null, checked: false, renaming: false, connected: false, lobby: null, game: null, clockOffset: 0, view: 'main', history: null, review: null,
 });
 
 // Game events go to the board renderer in order; it consumes them by sequence.

@@ -5,6 +5,8 @@ import { Login } from './ui/Login';
 import { Lobby } from './ui/Lobby';
 import { Game } from './ui/Game';
 import { MyGames } from './ui/MyGames';
+import { History } from './ui/History';
+import { Review } from './ui/Review';
 import { OutgoingModal } from './ui/Outgoing';
 import { MiniBoard, movesWord } from './ui/MiniBoard';
 
@@ -35,6 +37,8 @@ export function App() {
         <Match when={!app.checked}><div /></Match>
         <Match when={!app.me || app.renaming}><Login /></Match>
         <Match when={app.view === 'games'}><MyGames /></Match>
+        <Match when={app.view === 'history'}><History /></Match>
+        <Match when={app.view === 'review'}><Review /></Match>
         <Match when={app.game}><Game /></Match>
         <Match when={true}><Lobby /></Match>
       </Switch>

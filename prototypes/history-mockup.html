@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>История игр — макет</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&text=%E7%81%AB%E5%86%B0&display=block" rel="stylesheet">
+<!-- the game UI styles, copied from web/src/styles.css -->
+<style>
+:root {
+  --bg: #141618; --surface: #1f2225; --surface-2: #282c30; --line: #3a3f45;
+  --text: #eceae5; --muted: #a9acaf; --accent: #f0883e; --accent-hover: #f59a57; --accent-ink: #1b1006;
+  --ok: #6cc497; --danger: #ef7d6f;
+  --wood-1: #d6a35c; --wood-2: #b9813f; --frame: #2a1c11; --frame-text: #ecd5a8;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: 'Manrope', system-ui, sans-serif; }
+#root { min-height: 100%; }
+h1, h2 { margin: 0; }
+
+.btn { font: inherit; font-weight: 700; font-size: 15px; min-height: 44px; padding: 0 18px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; transition: background .15s, border-color .15s; }
+.btn:hover:not(:disabled) { background: #33383d; border-color: #4a5057; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn:focus-visible, .seg button:focus-visible, .field:focus-visible, .toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
+.btn.ghost { background: transparent; }
+.btn.danger { color: var(--danger); }
+.btn.small { min-height: 36px; font-size: 14px; padding: 0 14px; }
+.field { font: inherit; font-size: 17px; width: 100%; min-height: 52px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+.label { font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; }
+
+.seg { display: grid; gap: 6px; padding: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; }
+.seg button { font: inherit; font-weight: 700; font-size: 15px; min-height: 40px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.seg button:hover:not(:disabled) { color: var(--text); background: var(--surface-2); }
+.seg button.on { background: var(--surface-2); color: var(--text); box-shadow: inset 0 0 0 1px #4a5057; }
+.seg button:disabled { cursor: not-allowed; }
+
+.toggle { font: inherit; display: inline-flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 16px 0 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font-weight: 700; font-size: 15px; cursor: pointer; }
+.toggle .knob { width: 44px; height: 26px; border-radius: 999px; background: #474c52; position: relative; transition: background .2s; }
+.toggle .knob::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #d9d6cf; transition: transform .2s; }
+.toggle.on .knob { background: var(--ok); }
+.toggle.on .knob::after { transform: translateX(18px); background: #fff; }
+
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+.dot.free { background: var(--ok); } .dot.playing { background: #6b7076; } .dot.wait { background: var(--accent); }
+.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(240, 136, 62, .3); border-top-color: var(--accent); animation: spin .9s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.topbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; border-bottom: 1px solid #2c3035; background: #181a1d; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: 'Unbounded', 'Manrope', sans-serif; font-weight: 700; font-size: 18px; }
+.mini { width: 22px; height: 22px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center; font-family: 'Yuji Syuku', serif; font-size: 13px; }
+.mini.b { background: radial-gradient(circle at 34% 28%, #7a7f86 0%, #34373b 22%, #121315 58%, #050506 100%); color: #d3cec4; }
+.mini.w { background: radial-gradient(circle at 34% 28%, #fff 0%, #f4f2ec 30%, #dcd8ce 72%, #bfbaae 100%); color: #3b352f; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .25); }
+
+.modal-back { position: fixed; inset: 0; z-index: 20; background: rgba(8, 9, 10, .62); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal { width: 100%; max-width: 460px; padding: 28px; display: flex; flex-direction: column; gap: 18px; box-shadow: 0 30px 60px rgba(0, 0, 0, .5); }
+.params { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; padding: 16px; border-radius: 12px; background: var(--bg); border: 1px solid #33383d; }
+.params dt { font-size: 12px; } .params dd { margin: 4px 0 0; font-size: 17px; font-weight: 700; }
+.notice { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 30; background: #2c241d; border: 1px solid #5a3d24; padding: 12px 18px; border-radius: 12px; font-weight: 700; }
+.offline { position: fixed; top: 0; left: 0; right: 0; z-index: 30; background: #5a2d24; color: #fff; text-align: center; padding: 6px; font-size: 14px; font-weight: 700; }
+
+/* lobby */
+.lobby { max-width: 1200px; margin: 0 auto; padding: 24px 16px; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.players { list-style: none; margin: 0; padding: 0; }
+.players li { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 12px 24px; border-bottom: 1px solid #2a2e32; min-height: 64px; }
+.players li:hover { background: #24282c; }
+
+/* game */
+.game { display: flex; flex-wrap: wrap; gap: 24px; padding: 20px 16px; max-width: 1400px; margin: 0 auto; align-items: flex-start; justify-content: center; }
+.board-col { position: relative; flex: 1 1 560px; min-width: 300px; max-width: 900px; aspect-ratio: 1 / 1; max-height: calc(100vh - 110px); }
+.board-host { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.frame { position: relative; background: linear-gradient(180deg, #33231a, var(--frame)); border-radius: 14px; box-shadow: 0 24px 50px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .06); }
+.coord { position: absolute; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--frame-text); }
+.wood { position: absolute; border-radius: 4px; overflow: hidden; transition: filter .35s ease;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(255, 236, 190, .35), transparent 60%),
+    repeating-linear-gradient(93deg, rgba(110, 62, 18, .07) 0 2px, transparent 2px 9px),
+    repeating-linear-gradient(87deg, rgba(255, 238, 200, .07) 0 1px, transparent 1px 15px),
+    repeating-linear-gradient(91deg, rgba(90, 50, 15, .05) 0 6px, transparent 6px 37px),
+    linear-gradient(160deg, var(--wood-1), var(--wood-2));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .3), inset 0 0 30px rgba(90, 50, 10, .25); }
+.wood.blurred { filter: blur(18px) saturate(.6); }
+.layer { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.pause-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; pointer-events: none; z-index: 5; }
+.pause-overlay h2 { font-family: 'Unbounded', 'Manrope', sans-serif; font-size: 34px; text-shadow: 0 2px 12px rgba(0, 0, 0, .5); }
+.board-error { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; font-weight: 700; }
+.side { flex: 1 1 320px; max-width: 400px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.player { border: 1px solid var(--line); border-radius: 14px; padding: 16px; background: var(--surface); display: flex; flex-direction: column; gap: 12px; }
+.player.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.timerbar { height: 6px; border-radius: 999px; background: #33373c; overflow: hidden; }
+.timerbar > div { height: 100%; border-radius: 999px; background: var(--accent); transition: width .25s linear; }
+.timerbar.low > div { background: var(--danger); }
+.banner { border-radius: 14px; padding: 16px; background: #2c241d; border: 1px solid #5a3d24; display: flex; flex-direction: column; gap: 12px; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+table.score { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
+table.score th, table.score td { padding: 8px 0; text-align: right; border-top: 1px solid #33383d; }
+table.score th:first-child { text-align: left; }
+.gameclock { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 10px 16px; border-radius: 12px; background: #1f2225; border: 1px solid #33383d; font-size: 14px; }
+.gameclock strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.who { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; vertical-align: middle; }
+.who-nick { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+table.score thead th .who { max-width: 130px; margin-left: 12px; }
+.pass-note { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6; display: inline-flex; align-items: center; gap: 12px; padding: 14px 26px; border-radius: 16px; background: rgba(20, 22, 24, .86); border: 1px solid #3a3f45; box-shadow: 0 12px 30px rgba(0, 0, 0, .45); font-family: 'Unbounded', 'Manrope', sans-serif; font-size: 26px; font-weight: 700; color: var(--text); pointer-events: none; animation: pass-note 2s ease both; }
+@keyframes pass-note { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.92); } 12%, 80% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .pass-note { animation: none; } }
+.h2h { min-width: 56px; text-align: right; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; color: #8f9397; }
+.h2h.ahead { color: var(--ok); }
+.h2h.behind { color: #e0806b; }
+.h2h-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 14px; border-radius: 12px; background: #1f2225; border: 1px solid #33383d; font-size: 14px; color: #d6d2ca; }
+.h2h-line strong { font-variant-numeric: tabular-nums; color: var(--text); font-size: 16px; }
+.h2h-line .plus { color: var(--ok); font-weight: 800; font-size: 13px; margin-left: 2px; }
+.h2h-score { display: inline-flex; align-items: center; gap: 8px; }
+
+</style>
+<style>
+  body { padding: 24px 16px 80px; }
+  .page { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; }
+  .screen h2.title { font-family: 'Unbounded', 'Manrope', sans-serif; font-size: 20px; margin-bottom: 6px; }
+  .screen > p { color: var(--muted); margin: 0 0 16px; line-height: 1.5; max-width: 820px; }
+  .mock { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; background: #17191b; border: 1px solid #2c3035; border-radius: 18px; padding: 20px; }
+  .boardwrap { position: relative; flex: 0 0 auto; }
+  .boardwrap svg { display: block; border-radius: 12px; box-shadow: 0 18px 40px rgba(0,0,0,.45); }
+  .side { width: 360px; display: flex; flex-direction: column; gap: 12px; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .grid-alt { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; }
+  .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .player-mini { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+  .player-mini .t { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .player-mini .n { margin-left: auto; text-align: right; font-weight: 800; }
+  .player-mini.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .stone { width: 30px; height: 30px; font-size: 17px; }
+  .box { padding: 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; }
+  .slider { width: 100%; accent-color: var(--accent); }
+  .step { font-size: 15px; font-weight: 700; }
+  .check { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .check input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .note { font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+  .chip.ok { background: rgba(108,196,151,.15); color: var(--ok); }
+  .chip.off { background: #2a2e32; color: #9a9ea3; }
+  .chip.alt { background: rgba(240,136,62,.14); color: var(--accent); }
+  .waiting { gap: 10px; font-weight: 700; color: #e9c9a6; }
+  .dots { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px rgba(240,136,62,.25); }
+  .started { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  .started span { font-family: 'Unbounded', 'Manrope', sans-serif; font-size: 26px; font-weight: 800; padding: 14px 26px; border-radius: 14px; background: rgba(17,19,21,.82); border: 1px solid rgba(240,136,62,.55); color: #f6e7d6; box-shadow: 0 12px 30px rgba(0,0,0,.45); }
+  .preview-banner { position: absolute; left: 12px; right: 12px; top: 12px; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px; background: rgba(20, 60, 110, .92); border: 1px solid #5a9ae0; color: #e8f2ff; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .preview-frame { position: absolute; inset: 0; border-radius: 12px; box-shadow: inset 0 0 0 4px #5a9ae0; pointer-events: none; }
+  .modal-inline { position: relative; width: 420px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 24px; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 30px 60px rgba(0,0,0,.5); }
+  .modal-inline h3 { font-size: 21px; line-height: 1.3; }
+  .games { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; width: 100%; }
+  .gcard { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .gcard.off { opacity: .62; }
+  .gcard .vs { font-weight: 800; display: flex; align-items: center; gap: 8px; }
+  .gcard .meta { font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .topbar-mock { width: 100%; display: flex; align-items: center; gap: 16px; padding: 10px 14px; border-radius: 12px; background: #1b1d20; border: 1px solid #2c3035; }
+  .topbar-mock .nav { margin-left: auto; display: flex; gap: 8px; }
+  .topbar-mock .nav .btn.on { border-color: var(--accent); color: var(--accent); }
+  .tag { font-size: 12px; font-weight: 800; color: #1b1006; background: var(--accent); border-radius: 6px; padding: 2px 6px; }
+</style>
+<style>
+  .hist { display: flex; flex-direction: column; gap: 14px; width: 100%; }
+  .hcard { display: grid; grid-template-columns: 150px minmax(0, 1fr) 300px; gap: 18px; align-items: start; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+  .hcard .head { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .hcard .opp { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 800; flex-wrap: wrap; }
+  .hcard .when { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .hcard .verdict { font-size: 17px; font-weight: 800; }
+  .hcard .verdict.win { color: var(--ok); } .hcard .verdict.loss { color: #e0806b; } .hcard .verdict.none { color: #8f9397; }
+  .hcard .verdict span { color: var(--text); font-weight: 600; font-size: 15px; margin-left: 6px; }
+  .pair { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 10px; background: #181a1d; border: 1px solid #33383d; font-size: 14px; color: var(--muted); }
+  .pair strong { color: var(--text); font-size: 16px; font-variant-numeric: tabular-nums; }
+  .chip.done { background: rgba(108,196,151,.15); color: var(--ok); }
+  .chip.adj { background: rgba(240,136,62,.14); color: var(--accent); }
+  .chip.closed { background: #2a2e32; color: #9a9ea3; }
+  table.score.compact { font-size: 14px; }
+  table.score.compact th, table.score.compact td { padding: 6px 0; }
+  table.score td.unk { color: #6f7378; }
+  .hcard .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+  .topbar-mock { flex-wrap: wrap; } .topbar-mock .nav { flex-wrap: wrap; justify-content: flex-end; }
+  .toprow { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .vsline { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; min-width: 0; flex-wrap: wrap; }
+  .vsline .nk { font-weight: 700; color: #d6d2ca; } .vsline .nk.me { color: var(--text); }
+  .vsline strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+  .hcard .when { white-space: nowrap; }
+  .meta2 { font-size: 14px; color: var(--muted); }
+  /* phones: the players stay on one line, the date goes to the second line */
+  .phone .hcard .head { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-auto-flow: row dense; gap: 8px 12px; }
+  .phone .hcard .head > * { grid-column: 1 / -1; }
+  .phone .toprow { display: contents; }
+  .phone .vsline { grid-row: 1; flex-wrap: nowrap; white-space: nowrap; }
+  .phone .hcard .head .meta2 { grid-row: 2; grid-column: 1; }
+  .phone .hcard .head .when { grid-row: 2; grid-column: 2; text-align: right; }
+  @media (max-width: 640px) {
+    .hcard .head { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-auto-flow: row dense; gap: 8px 12px; }
+    .hcard .head > * { grid-column: 1 / -1; }
+    .toprow { display: contents; }
+    .vsline { grid-row: 1; flex-wrap: nowrap; white-space: nowrap; }
+    .hcard .head .meta2 { grid-row: 2; grid-column: 1; }
+    .hcard .head .when { grid-row: 2; grid-column: 2; text-align: right; }
+  }
+  .phone .boardwrap svg, .phone .boardwrap { width: 100%; height: auto; }
+  @media (max-width: 640px) { body { padding: 16px 8px 60px; } .mock { padding: 8px; } .phone { padding: 4px; border: 0; } }
+  .caps { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .caps .muted { margin-right: 2px; } .caps strong { margin-right: 4px; }
+  .qs { margin: 0; padding: 18px 18px 18px 38px; border-radius: 14px; background: #1b2430; border: 1px solid #355a85; line-height: 1.6; color: #d8e6f5; }
+  .qs b { color: #fff; }
+  .phone { width: min(375px, 100%); border: 1px solid #2c3035; border-radius: 22px; padding: 12px; background: var(--bg); display: flex; flex-direction: column; gap: 12px; }
+  .phone .hcard { grid-template-columns: 1fr; gap: 10px; padding: 14px; }
+  .phone .hcard .mb { display: none; }
+  @media (max-width: 1000px) { .hcard { grid-template-columns: 1fr; } .hcard .mb { display: none; } }
+</style>
+</head>
+<body>
+<main class="page">
+  <div>
+    <h1 style="font-family: 'Unbounded', 'Manrope', sans-serif; font-size: 28px;">История игр — макет</h1>
+    <p class="muted" style="margin: 8px 0 0; line-height: 1.5; max-width: 860px;">Статичный макет для обсуждения. Доски упрощены, в игре остаются наши (WebGL). Тексты и расположение — предложение.</p>
+  </div>
+
+  <section class="screen">
+    <h2 class="title">1. Пункт меню</h2>
+    <p>Кнопка «История игр» в шапке рядом с «Мои партии», только вне партии (как и «Мои партии» и выход).</p>
+    <div class="mock" style="flex-direction: column">
+      <div class="topbar-mock"><span class="mini b" style="width:22px;height:22px">火</span><b>Го онлайн</b><span class="muted" style="font-size:14px">Комната без рейтинга</span>
+        <div class="nav"><span class="muted" style="align-self:center;font-size:15px">Вы: <b style="color:var(--text)">rombl</b></span><button class="btn small on">История игр</button><button class="btn small">Мои партии <span class="tag">1</span></button><button class="btn small" style="width:36px;padding:0">⇥</button></div></div>
+    </div>
+  </section>
+
+  <section class="screen">
+    <h2 class="title">2. Страница «История игр»</h2>
+    <p>Все ваши партии, последняя сверху. Для отложенной и закрытой известны только пленные (и коми); остальное — прочерки, кнопки «Просмотреть игру» у них нет (смотреть можно только законченные). Сдача: победитель известен, очки — прочерки. Если победителя нет (отложена, закрыта), строки «Победа/Поражение» нет. Сверху — счёт встреч: вы всегда слева, у каждого ника камень, которым он играл; счёт «вы : соперник» на момент конца партии (она уже в счёте). Дата и время начала — в правом верхнем углу.</p>
+    <div class="mock" style="flex-direction: column">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;width:100%"><h2 style="font-size:22px">История игр</h2><span class="muted">4 партии</span></div>
+      <div class="hist"><div class="hcard">
+      <div class="mb" data-board="main" data-size="150"></div>
+      <div class="head">
+        <div class="toprow"><div class="vsline"><span class="nk me">rombl</span><span class="mini b" style="width:22px;height:22px;font-size:13px">火</span><strong>4 : 2</strong><span class="mini w" style="width:22px;height:22px;font-size:13px">冰</span><span class="nk">Romanos</span></div><span class="when">11.11.2026, 19:31</span></div>
+        <div class="meta2">19×19 · 212 ходов</div>
+        <div class="row" style="flex-wrap:wrap"><span class="chip done">Закончена</span></div>
+        <div class="verdict win">Победа<span>на <b>6,5</b> очка</span></div>
+      </div>
+      <div><table class="score compact"><thead><tr><th></th><th><span class="mini b" style="width:20px;height:20px;font-size:12px">火</span> вы</th><th><span class="mini w" style="width:20px;height:20px;font-size:12px">冰</span> Romanos</th></tr></thead><tbody><tr><th>Территория</th><td>48</td><td>45</td></tr><tr><th>Пленные</th><td>12</td><td>7</td></tr><tr><th>Коми</th><td class="unk">—</td><td>6,5</td></tr><tr><th>Итого</th><td><strong>60</strong></td><td><strong>58,5</strong></td></tr></tbody></table><div class="foot"><button class="btn small">Просмотреть игру</button></div></div>
+    </div><div class="hcard">
+      <div class="mb" data-board="own" data-size="150"></div>
+      <div class="head">
+        <div class="toprow"><div class="vsline"><span class="nk me">rombl</span><span class="mini w" style="width:22px;height:22px;font-size:13px">冰</span><strong>1 : 3</strong><span class="mini b" style="width:22px;height:22px;font-size:13px">火</span><span class="nk">Странник</span></div><span class="when">10.11.2026, 21:05</span></div>
+        <div class="meta2">13×13 · 96 ходов</div>
+        <div class="row" style="flex-wrap:wrap"><span class="chip done">Закончена</span></div>
+        <div class="verdict loss">Поражение<span>вы сдались</span></div>
+      </div>
+      <div><table class="score compact"><thead><tr><th></th><th><span class="mini w" style="width:20px;height:20px;font-size:12px">冰</span> вы</th><th><span class="mini b" style="width:20px;height:20px;font-size:12px">火</span> Странник</th></tr></thead><tbody><tr><th>Территория</th><td class="unk">—</td><td class="unk">—</td></tr><tr><th>Пленные</th><td>3</td><td>9</td></tr><tr><th>Коми</th><td>6,5</td><td class="unk">—</td></tr><tr><th>Итого</th><td class="unk"><strong>—</strong></td><td class="unk"><strong>—</strong></td></tr></tbody></table><div class="foot"><button class="btn small">Просмотреть игру</button></div></div>
+    </div><div class="hcard">
+      <div class="mb" data-board="step" data-size="150"></div>
+      <div class="head">
+        <div class="toprow"><div class="vsline"><span class="nk me">rombl</span><span class="mini b" style="width:22px;height:22px;font-size:13px">火</span><strong>3 : 2</strong><span class="mini w" style="width:22px;height:22px;font-size:13px">冰</span><span class="nk">Romanos</span></div><span class="when">09.11.2026, 18:40</span></div>
+        <div class="meta2">19×19 · 57 ходов</div>
+        <div class="row" style="flex-wrap:wrap"><span class="chip adj">Отложена</span></div>
+        
+      </div>
+      <div><table class="score compact"><thead><tr><th></th><th><span class="mini b" style="width:20px;height:20px;font-size:12px">火</span> вы</th><th><span class="mini w" style="width:20px;height:20px;font-size:12px">冰</span> Romanos</th></tr></thead><tbody><tr><th>Территория</th><td class="unk">—</td><td class="unk">—</td></tr><tr><th>Пленные</th><td>4</td><td>2</td></tr><tr><th>Коми</th><td class="unk">—</td><td>6,5</td></tr><tr><th>Итого</th><td class="unk"><strong>—</strong></td><td class="unk"><strong>—</strong></td></tr></tbody></table></div>
+    </div><div class="hcard">
+      <div class="mb" data-board="step" data-size="150"></div>
+      <div class="head">
+        <div class="toprow"><div class="vsline"><span class="nk me">rombl</span><span class="mini w" style="width:22px;height:22px;font-size:13px">冰</span><strong>3 : 2</strong><span class="mini b" style="width:22px;height:22px;font-size:13px">火</span><span class="nk">Romanos</span></div><span class="when">09.11.2026, 18:52</span></div>
+        <div class="meta2">19×19 · 23 + 18 ходов</div>
+        <div class="row" style="flex-wrap:wrap"><span class="chip closed">Закрыта</span><span class="chip alt">Альтернативный розыгрыш</span></div>
+        
+      </div>
+      <div><table class="score compact"><thead><tr><th></th><th><span class="mini w" style="width:20px;height:20px;font-size:12px">冰</span> вы</th><th><span class="mini b" style="width:20px;height:20px;font-size:12px">火</span> Romanos</th></tr></thead><tbody><tr><th>Территория</th><td class="unk">—</td><td class="unk">—</td></tr><tr><th>Пленные</th><td>1</td><td>2</td></tr><tr><th>Коми</th><td>6,5</td><td class="unk">—</td></tr><tr><th>Итого</th><td class="unk"><strong>—</strong></td><td class="unk"><strong>—</strong></td></tr></tbody></table></div>
+    </div></div>
+    </div>
+  </section>
+
+  <section class="screen">
+    <h2 class="title">3. На телефоне</h2>
+    <p>Карточки в одну колонку, без миниатюры доски.</p>
+    <div class="mock"><div class="phone"><div style="display:flex;justify-content:space-between;align-items:baseline"><h2 style="font-size:20px">История игр</h2><span class="muted">4 партии</span></div><div class="hcard">
+      <div class="mb" data-board="main" data-size="150"></div>
+      <div class="head">
+        <div class="toprow"><div class="vsline"><span class="nk me">rombl</span><span class="mini b" style="width:22px;height:22px;font-size:13px">火</span><strong>4 : 2</strong><span class="mini w" style="width:22px;height:22px;font-size:13px">冰</span><span class="nk">Romanos</span></div><span class="when">11.11.2026, 19:31</span></div>
+        <div class="meta2">19×19 · 212 ходов</div>
+        <div class="row" style="flex-wrap:wrap"><span class="chip done">Закончена</span></div>
+        <div class="verdict win">Победа<span>на <b>6,5</b> очка</span></div>
+      </div>
+      <div><table class="score compact"><thead><tr><th></th><th><span class="mini b" style="width:20px;height:20px;font-size:12px">火</span> вы</th><th><span class="mini w" style="width:20px;height:20px;font-size:12px">冰</span> Romanos</th></tr></thead><tbody><tr><th>Территория</th><td>48</td><td>45</td></tr><tr><th>Пленные</th><td>12</td><td>7</td></tr><tr><th>Коми</th><td class="unk">—</td><td>6,5</td></tr><tr><th>Итого</th><td><strong>60</strong></td><td><strong>58,5</strong></td></tr></tbody></table><div class="foot"><button class="btn small">Просмотреть игру</button></div></div>
+    </div><div class="hcard">
+      <div class="mb" data-board="step" data-size="150"></div>
+      <div class="head">
+        <div class="toprow"><div class="vsline"><span class="nk me">rombl</span><span class="mini b" style="width:22px;height:22px;font-size:13px">火</span><strong>3 : 2</strong><span class="mini w" style="width:22px;height:22px;font-size:13px">冰</span><span class="nk">Romanos</span></div><span class="when">09.11.2026, 18:40</span></div>
+        <div class="meta2">19×19 · 57 ходов</div>
+        <div class="row" style="flex-wrap:wrap"><span class="chip adj">Отложена</span></div>
+        
+      </div>
+      <div><table class="score compact"><thead><tr><th></th><th><span class="mini b" style="width:20px;height:20px;font-size:12px">火</span> вы</th><th><span class="mini w" style="width:20px;height:20px;font-size:12px">冰</span> Romanos</th></tr></thead><tbody><tr><th>Территория</th><td class="unk">—</td><td class="unk">—</td></tr><tr><th>Пленные</th><td>4</td><td>2</td></tr><tr><th>Коми</th><td class="unk">—</td><td>6,5</td></tr><tr><th>Итого</th><td class="unk"><strong>—</strong></td><td class="unk"><strong>—</strong></td></tr></tbody></table></div>
+    </div></div></div>
+  </section>
+
+  <section class="screen">
+    <h2 class="title">4. Просмотр законченной партии</h2>
+    <p>Кнопка «← История игр» — в шапке, вместо «Мои партии»; в центре шапки — пара со счётом встреч. Справа — слайдер по ходам партии. «Альтернативный розыгрыш с хода N» открывает рядом вторую доску (п. 5). Ничего не отправляется сопернику: это разбор для себя.</p>
+    <div class="mock" style="flex-direction: column">
+      <div class="topbar-mock"><span class="mini b" style="width:22px;height:22px">火</span><b>Го онлайн</b>
+        <div class="vsline" style="margin:0 auto"><span class="nk me">rombl</span><span class="mini b" style="width:22px;height:22px;font-size:13px">火</span><strong>4 : 2</strong><span class="mini w" style="width:22px;height:22px;font-size:13px">冰</span><span class="nk">Romanos</span></div>
+        <div class="nav" style="margin-left:0"><button class="btn small">← История игр</button></div></div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;justify-content:center;width:100%">
+        <div class="boardwrap" data-board="step" data-size="400"></div>
+        <div class="side" style="width: 340px">
+          <div class="box">
+          <div class="row" style="justify-content: space-between"><span class="label">Партия с Romanos</span><span class="chip done">Закончена</span></div>
+          <span class="note" style="margin-top:-6px">11.11.2026, 19:31 · 19×19 · коми 6,5<br>Победа на 6,5 очка</span>
+        </div>
+          <div class="box">
+          <div class="row" style="justify-content: space-between"><span class="caps"><span class="muted">Пленные</span><span class="mini b" style="width:18px;height:18px;font-size:11px">火</span><strong>2</strong><span class="mini w" style="width:18px;height:18px;font-size:11px">冰</span><strong>1</strong></span><span class="step">23 из 212</span></div>
+          <input class="slider" type="range" min="0" max="212" value="23">
+          <div class="grid3"><button class="btn small">◀ Ход</button><button class="btn small">Ход ▶</button><button class="btn small">Последний</button></div>
+            <button class="btn primary">Альтернативный розыгрыш с хода 23</button>
+          </div>
+          <button class="btn small" style="align-self:flex-start">Скачать SGF</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen">
+    <h2 class="title">5. Альтернативный розыгрыш при просмотре</h2>
+    <p>Справа — вторая доска с позиции выбранного хода. Вы сами ходите по очереди за чёрных и белых (взятия по правилам). После каждого хода слайдер партии встаёт на тот же номер хода, что и на второй доске, — видно, что было в партии в этот момент. Слайдер можно крутить свободно, но следующий ход снова выставит его. У розыгрыша свой слайдер — от точки старта до последнего вашего хода. Если отмотать назад и поставить камень, он становится новым последним ходом, а ходы, что были дальше, стираются. Отдельной кнопки отмены нет: отменить ход — отмотать слайдер и сходить иначе. Розыгрыш нигде не сохраняется и закрывается крестиком или уходом со страницы.</p>
+    <div class="mock" style="flex-direction: column">
+      <div class="topbar-mock"><span class="mini b" style="width:22px;height:22px">火</span><b>Го онлайн</b>
+        <div class="vsline" style="margin:0 auto"><span class="nk me">rombl</span><span class="mini b" style="width:22px;height:22px;font-size:13px">火</span><strong>4 : 2</strong><span class="mini w" style="width:22px;height:22px;font-size:13px">冰</span><span class="nk">Romanos</span></div>
+        <div class="nav" style="margin-left:0"><button class="btn small">← История игр</button></div></div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;justify-content:center;width:100%">
+        <div style="display:flex;flex-direction:column;gap:10px;width:360px">
+          <div class="row" style="min-height:28px"><span class="label">Партия</span></div>
+          <div class="boardwrap" data-board="main26" data-size="360"></div>
+          <div class="box">
+          <div class="row" style="justify-content: space-between"><span class="caps"><span class="muted">Пленные</span><span class="mini b" style="width:18px;height:18px;font-size:11px">火</span><strong>3</strong><span class="mini w" style="width:18px;height:18px;font-size:11px">冰</span><strong>1</strong></span><span class="step">26 из 212</span></div>
+          <input class="slider" type="range" min="0" max="212" value="26">
+          <div class="grid3"><button class="btn small">◀ Ход</button><button class="btn small">Ход ▶</button><button class="btn small">Последний</button></div>
+            <span class="note">Слайдер встал на ход 26 вслед за розыгрышем.</span>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;width:360px">
+          <div class="row" style="justify-content:space-between;min-height:28px"><span class="label" style="color:var(--accent)">Альтернативный розыгрыш · с хода 23</span><button class="btn small" style="min-height:28px;padding:0 10px" title="Закрыть розыгрыш">✕</button></div>
+          <div class="boardwrap" data-board="alt" data-size="360"></div>
+          <div class="box">
+            <div class="row" style="justify-content: space-between"><span class="caps"><span class="muted">Пленные</span><span class="mini b" style="width:18px;height:18px;font-size:11px">火</span><strong>4</strong><span class="mini w" style="width:18px;height:18px;font-size:11px">冰</span><strong>2</strong></span><span class="step">26 · ходы 23–26</span></div>
+            <input class="slider" type="range" min="23" max="26" value="26">
+            <div class="grid3"><button class="btn small">◀ Ход</button><button class="btn small">Ход ▶</button><button class="btn small">Последний</button></div>
+            <div class="row" style="justify-content: space-between"><span class="note">Ваших ходов: 3</span><span class="row" style="gap:6px">Ходят <span class="mini b" style="width:20px;height:20px;font-size:12px">火</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen">
+    <h2 class="title">6. Альтернативный розыгрыш на телефоне</h2>
+    <p>Две доски друг под другом не помещаются, поэтому сверху переключатель «Партия / Розыгрыш»: открыта одна доска, под ней её панель. По умолчанию — розыгрыш.</p>
+    <div class="mock"><div class="phone">
+      <div class="seg" style="grid-template-columns:1fr 1fr"><button>Партия · 26</button><button class="on">Розыгрыш · 26</button></div>
+      <div class="boardwrap" data-board="alt" data-size="349"></div>
+      <div class="box">
+        <div class="row" style="justify-content: space-between"><span class="caps"><span class="muted">Пленные</span><span class="mini b" style="width:18px;height:18px;font-size:11px">火</span><strong>4</strong><span class="mini w" style="width:18px;height:18px;font-size:11px">冰</span><strong>2</strong></span><span class="step">26 · ходы 23–26</span></div>
+        <input class="slider" type="range" min="23" max="26" value="26">
+        <div class="grid3"><button class="btn small">◀ Ход</button><button class="btn small">Ход ▶</button><button class="btn small">Последний</button></div>
+        <div class="row" style="justify-content: space-between"><span class="note">Ваших ходов: 3</span><span class="row" style="gap:6px">Ходят <span class="mini b" style="width:20px;height:20px;font-size:12px">火</span></span></div>
+      </div>
+    </div></div>
+  </section>
+
+  <section class="screen">
+    <h2 class="title">Что нужно уточнить</h2>
+    <ol class="qs">
+      <li><b>Альтернативные розыгрыши</b> партий с соперником — в истории отдельными строками с меткой.</li>
+      <li><b>Отложенная, а потом доигранная</b> партия — одна строка, статус меняется на «Закончена».</li>
+      <li><b>Старые партии</b> в историю не попадут: до этой фичи ходы не сохранялись. История начнётся с выпуска.</li>
+      <li><b>«Скачать SGF»</b> в просмотре — моё предложение. Нужно?</li>
+      <li><b>Смена точки старта</b>: закрыть розыгрыш крестиком, выбрать ход слайдером партии и снова нажать «Альтернативный розыгрыш с хода N».</li>
+      <li><b>Если розыгрыш длиннее партии</b>, слайдер партии стоит на последнем ходе.</li>
+      <li><b>Слайдер розыгрыша и слайдер партии</b>: партия встаёт на номер хода розыгрыша только при новом ходе (как вы описали). Перемотка слайдера розыгрыша партию не двигает. Так?</li>
+    </ol>
+  </section>
+</main>
+<script>
+// Simple SVG boards for the mockup (the game itself keeps its WebGL stones).
+const N = 19;
+const MAIN = 'dd.pp.dp.pd.jj.qn.nq.ck.kc.fq.qf.cn.nc.jd.dj.pj.jp.hh.ll.lh.hl.oo.ee.fc.cf.oc.co.mq.qm.gj.jg.mj.jm.hq.qh.kq.qk.hc.ch.lc.cl.dg.gd.mp.pm.ec.ce.ge.eg.oe.eo.ff.nn.fn.nf.ii.kk'.split('.');
+function stones(n) { return MAIN.slice(0, n).map((s, i) => ({ x: s.charCodeAt(0) - 97, y: s.charCodeAt(1) - 97, c: i % 2 })); }
+let boardSeq = 0;
+function svgBoard(size, list, lastIdx, preview) {
+  const k = ++boardSeq;
+  const m = size * 0.06, cell = (size - 2 * m) / (N - 1);
+  let s = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><defs>
+    <radialGradient id="gb${k}" cx="34%" cy="28%"><stop offset="0" stop-color="#7a7f86"/><stop offset=".25" stop-color="#2a2c30"/><stop offset="1" stop-color="#050506"/></radialGradient>
+    <radialGradient id="gw${k}" cx="34%" cy="28%"><stop offset="0" stop-color="#fff"/><stop offset=".35" stop-color="#f1efe9"/><stop offset="1" stop-color="#bfbaae"/></radialGradient>
+    <linearGradient id="wood${k}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#d6a35c"/><stop offset="1" stop-color="#b9813f"/></linearGradient></defs>
+    <rect width="${size}" height="${size}" rx="12" fill="url(#wood${k})"/>`;
+  for (let i = 0; i < N; i++) {
+    const o = m + i * cell, w = i === 0 || i === N - 1 ? 1.6 : 0.9;
+    s += `<line x1="${m}" y1="${o}" x2="${size - m}" y2="${o}" stroke="rgba(58,40,18,.85)" stroke-width="${w}"/><line x1="${o}" y1="${m}" x2="${o}" y2="${size - m}" stroke="rgba(58,40,18,.85)" stroke-width="${w}"/>`;
+  }
+  for (const [x, y] of [[3,3],[9,3],[15,3],[3,9],[9,9],[15,9],[3,15],[9,15],[15,15]]) s += `<circle cx="${m + x * cell}" cy="${m + y * cell}" r="${Math.max(1.6, cell * .11)}" fill="rgba(58,40,18,.9)"/>`;
+  list.forEach((st, i) => {
+    const cx = m + st.x * cell, cy = m + st.y * cell, r = cell * 0.47;
+    if (i === lastIdx) {
+      const col = st.c ? '#5aa6ff' : '#ff7a1a';
+      s += `<line x1="${cx - cell}" y1="${cy}" x2="${cx + cell}" y2="${cy}" stroke="${col}" stroke-width="${cell * .16}" stroke-linecap="round" opacity=".85"/><line x1="${cx}" y1="${cy - cell}" x2="${cx}" y2="${cy + cell}" stroke="${col}" stroke-width="${cell * .16}" stroke-linecap="round" opacity=".85"/>`;
+    }
+    s += `<circle cx="${cx + r * .08}" cy="${cy + r * .14}" r="${r}" fill="rgba(0,0,0,.28)"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#${st.c ? 'gw' : 'gb'}${k})"/>`;
+  });
+  s += '</svg>';
+  if (preview) s += `<div class="preview-frame"></div><div class="preview-banner">👁 Предложение соперника · ход 23 · цвета меняются</div>`;
+  return s;
+}
+document.querySelectorAll('[data-board]').forEach((el) => {
+  const size = Number(el.dataset.size);
+  const kind = el.dataset.board;
+  const n = kind === 'main' ? 57 : kind === 'main26' ? 26 : kind === 'step' || kind === 'alt' ? 23 : 40;
+  const list = stones(n);
+  if (kind === 'alt') list.push({ x: 15, y: 9, c: 1 }, { x: 14, y: 10, c: 0 }, { x: 13, y: 6, c: 1 }); // your own moves 24–26
+  el.innerHTML = svgBoard(size, list, list.length - 1, el.dataset.preview === '1') + (el.dataset.started === '1' ? '<div class="started"><span>Игра началась</span></div>' : '');
+});
+</script>
+</body>
+</html>

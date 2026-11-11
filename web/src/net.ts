@@ -1,5 +1,6 @@
 import { reconcile } from 'solid-js/store';
 import { app, setApp, emitGameUpdate, type GameEvent, type GameState, type Me } from './store';
+import { parseSgf } from './replay';
 
 // ngrok's free plan shows a warning page to browsers; this header lets API calls through it.
 const headers = { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' };
@@ -59,6 +60,8 @@ export function connect() {
         break;
       }
       case 'noGame': setApp('game', null); break;
+      case 'history': setApp('history', m.games ?? []); break;
+      case 'historyGame': if (app.review?.id === m.id) setApp('review', { id: m.id, moves: parseSgf(m.sgf), sgf: m.sgf }); break;
       case 'error': break;
     }
   };
