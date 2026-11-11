@@ -36,18 +36,26 @@ export function Topbar(props: { info?: string; left?: JSX.Element; center?: JSX.
           </Show>
         </span>
         <span class="tb-buttons">
-        <Show when={app.view === 'games'}>
+        {/* looking through a game of the history: only the way back to the list */}
+        <Show when={app.view === 'review'}>
+          <button class="btn small" onClick={() => setApp('view', 'history')}>← История игр</button>
+        </Show>
+        <Show when={app.view === 'games' || app.view === 'history'}>
           <button class="btn small" onClick={() => setApp('view', 'main')}>{app.game ? 'К партии' : 'Комната'}</button>
         </Show>
+        {/* the history: only outside a game */}
+        <Show when={!props.inGame && !app.game && app.view !== 'review'}>
+          <button class="btn small" classList={{ on: app.view === 'history' }} aria-pressed={app.view === 'history'} onClick={() => setApp('view', 'history')}>История игр</button>
+        </Show>
         {/* not in the game screen: there the header holds the game's own information */}
-        <Show when={!props.inGame}>
+        <Show when={!props.inGame && app.view !== 'review'}>
           <button class="btn small" classList={{ on: app.view === 'games' }} aria-pressed={app.view === 'games'} onClick={() => setApp('view', 'games')}>
             Мои партии<Show when={adjourned() > 0}><span class="count">{adjourned()}</span></Show>
           </button>
         </Show>
         {props.corner}
         {/* sign out: not during a game; it takes the corner the side-panel button has in a game */}
-        <Show when={!props.inGame && !app.game}>
+        <Show when={!props.inGame && !app.game && app.view !== 'review'}>
           <button class="btn small icon" title="Выйти" aria-label="Выйти" onClick={() => void logout()}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" />

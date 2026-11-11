@@ -1,5 +1,5 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
-import { app, onGameUpdate, type GameState } from '../store';
+import { app, onGameUpdate, type GameEvent, type GameState } from '../store';
 import { send } from '../net';
 import { BoardRenderer } from './renderer';
 
@@ -16,7 +16,17 @@ const GUTTER = 24; // frame strip with coordinates
 export type BoardView = { board: string; last: number; key: string };
 
 /** The board: wooden surface with grid (2D canvas), stones and effects (WebGL), hover and scoring marks (2D). */
-export function Board(props: { blurred: boolean; view?: BoardView | null; offer?: boolean; picking?: boolean }) {
+/**
+ * By default the board shows the current game (app.game) and sends moves to the server. With `src`
+ * it shows another position (a game of the history), updated through `subscribe`; with `onPoint`
+ * a click on an empty point is a local move (the stone of the side to move).
+ */
+export function Board(props: {
+  blurred: boolean; view?: BoardView | null; offer?: boolean; picking?: boolean;
+  src?: () => GameState | null;
+  subscribe?: (fn: (g: GameState, e: GameEvent | null) => void) => () => void;
+  onPoint?: (i: number) => void;
+}) {
   let host!: HTMLDivElement;
   let gridC!: HTMLCanvasElement;
   let glC!: HTMLCanvasElement;
@@ -26,7 +36,8 @@ export function Board(props: { blurred: boolean; view?: BoardView | null; offer?
   const [hover, setHover] = createSignal(-1);
   const [sent, setSent] = createSignal(-1); // the point of a move sent to the server, until it answers
   const [error, setError] = createSignal('');
-  const size = () => app.game?.size ?? 19;
+  const game = () => (props.src ? props.src() : app.game);
+  const size = () => game()?.size ?? 19;
   // what the renderer draws: the game, or the chosen position (a new key makes it redraw from scratch)
   const shown = (g: GameState): GameState => {
     const v = props.view;
@@ -69,7 +80,7 @@ export function Board(props: { blurred: boolean; view?: BoardView | null; offer?
 
   // the hover outline and the marks of the counting phase
   const drawUi = () => {
-    const g = app.game;
+    const g = game();
     const { cell, margin } = geom();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const ctx = uiC.getContext('2d')!;
@@ -105,7 +116,7 @@ export function Board(props: { blurred: boolean; view?: BoardView | null; offer?
     const h = hover();
     if (h >= 0 && h !== sent() && canPlay() && g.board[h] === '.') {
       const [x, y] = at(h);
-      const black = g.you === 'b';
+      const black = (props.onPoint ? g.turn : g.you) === 'b';
       ctx.lineWidth = 2;
       ctx.strokeStyle = black ? 'rgba(12, 12, 14, .9)' : 'rgba(255, 255, 255, .95)';
       ctx.fillStyle = black ? 'rgba(12, 12, 14, .16)' : 'rgba(255, 255, 255, .24)';
@@ -116,17 +127,18 @@ export function Board(props: { blurred: boolean; view?: BoardView | null; offer?
   // counting: a click on a stone marks its group dead or alive, a click on an empty point makes
   // its area neutral or gives it back as counted
   const canMark = () => {
-    const g = app.game;
-    return !!g && g.phase === 'scoring' && !!g.you;
+    const g = game();
+    return !props.src && !!g && g.phase === 'scoring' && !!g.you;
   };
 
   const canPlay = () => {
-    const g = app.game;
-    return !!g && g.phase === 'play' && g.you === g.turn && !g.pauseReq;
+    const g = game();
+    if (props.onPoint) return !!g;
+    return !props.src && !!g && g.phase === 'play' && g.you === g.turn && !g.pauseReq;
   };
 
   const pointToIndex = (ev: PointerEvent) => {
-    const g = app.game;
+    const g = game();
     if (!g) return -1;
     const r = uiC.getBoundingClientRect();
     const { cell, margin } = geom();
@@ -149,17 +161,18 @@ export function Board(props: { blurred: boolean; view?: BoardView | null; offer?
     const ro = new ResizeObserver(() => { layout(); drawGrid(); drawUi(); });
     ro.observe(host);
     layout(); drawGrid();
-    if (app.game) renderer.update(shown(app.game), null);
-    const off = onGameUpdate((g, e) => { renderer?.update(shown(g), props.view ? null : e); setSent(-1); drawUi(); });
+    const g0 = game();
+    if (g0) renderer.update(shown(g0), null);
+    const off = (props.subscribe ?? onGameUpdate)((g, e) => { renderer?.update(shown(g), props.view ? null : e); setSent(-1); drawUi(); });
     // Shift shows where the last move was: the glow wave runs again
     const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Shift' && !ev.repeat) renderer?.replaySignal(); };
     window.addEventListener('keydown', onKey);
     onCleanup(() => { ro.disconnect(); off(); window.removeEventListener('keydown', onKey); renderer?.destroy(); });
   });
 
-  createEffect(() => { hover(); app.game?.phase; app.game?.seq; drawUi(); });
+  createEffect(() => { hover(); const g = game(); g?.phase; g?.seq; g?.board; g?.turn; drawUi(); });
   createEffect(() => { size(); if (renderer) drawGrid(); });
-  createEffect(() => { const v = props.view; if (renderer && v && app.game) renderer.update(shown(app.game), null); });
+  createEffect(() => { const v = props.view; const g = game(); if (renderer && v && g) renderer.update(shown(g), null); });
 
   const cursor = () => (canPlay() || canMark() ? 'pointer' : 'default');
 
@@ -190,7 +203,11 @@ export function Board(props: { blurred: boolean; view?: BoardView | null; offer?
             onPointerLeave={() => setHover(-1)}
             onClick={(ev) => {
               const i = pointToIndex(ev as unknown as PointerEvent);
-              const g = app.game;
+              const g = game();
+              if (props.onPoint) {
+                if (i >= 0 && g && g.board[i] === '.') props.onPoint(i);
+                return;
+              }
               if (i >= 0 && g && canMark()) {
                 send({ t: g.board[i] === '.' ? 'toggleNeutral' : 'toggleDead', x: i % g.size, y: Math.floor(i / g.size) });
                 return;
