@@ -1,6 +1,6 @@
 import { For, Show, type JSX } from 'solid-js';
 import { app, setApp, komiLabel, timeLabel, type Settings } from '../store';
-import { send } from '../net';
+import { logout, send } from '../net';
 
 const SIZES = [9, 13, 15, 19];
 const KOMI = [4.5, 5.5, 6.5, 7.5];
@@ -46,6 +46,14 @@ export function Topbar(props: { info?: string; left?: JSX.Element; center?: JSX.
           </button>
         </Show>
         {props.corner}
+        {/* sign out: not during a game; it takes the corner the side-panel button has in a game */}
+        <Show when={!props.inGame && !app.game}>
+          <button class="btn small icon" title="Выйти" aria-label="Выйти" onClick={() => void logout()}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" />
+            </svg>
+          </button>
+        </Show>
         </span>
       </nav>
     </header>

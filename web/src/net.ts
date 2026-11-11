@@ -15,6 +15,13 @@ export async function login(nick: string): Promise<Me> {
   return r.json();
 }
 
+/** Signs this browser out: the server drops the cookie; the player stays and the nickname brings them back. */
+export async function logout() {
+  try { await fetch('/api/logout', { method: 'POST', headers, credentials: 'same-origin' }); } catch { /* offline: the state below still goes */ }
+  disconnect();
+  setApp({ me: null, game: null, lobby: null, view: 'main', renaming: false, connected: false });
+}
+
 let ws: WebSocket | null = null;
 let retry = 0;
 let wanted = false;
@@ -30,7 +37,12 @@ export function connect() {
     if (ws !== sock && ws !== null) return; // an old connection replaced by reconnect()
     ws = null;
     setApp('connected', false);
-    if (wanted) setTimeout(connect, Math.min(5000, 500 * 2 ** retry++));
+    if (!wanted) return;
+    // signed out in another tab of this browser: back to the nickname form instead of retrying
+    fetchMe().then((me) => {
+      if (me === null) { wanted = false; setApp({ me: null, game: null, lobby: null, view: 'main' }); }
+      else setTimeout(connect, Math.min(5000, 500 * 2 ** retry++));
+    }, () => setTimeout(connect, Math.min(5000, 500 * 2 ** retry++)));
   };
   sock.onmessage = (ev) => {
     let m: any;
@@ -52,7 +64,12 @@ export function connect() {
   };
 }
 
-export function disconnect() { wanted = false; ws?.close(); }
+export function disconnect() {
+  wanted = false;
+  const old = ws;
+  ws = null;
+  if (old) { old.onmessage = null; old.onclose = null; old.close(); }
+}
 
 /** After signing in as another player: drop the old connection and the old player's state. */
 export function reconnect() {
